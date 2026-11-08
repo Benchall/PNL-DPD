@@ -1,0 +1,886 @@
+<title>DPD P&amp;L Tracker</title>
+<meta name="claude:viewport-fit-sides" content="cover">
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow:wght@400;500;600&family=Barlow+Condensed:wght@600;700&display=swap">
+<style>
+/* Layout: sticky header with section tabs; dashboard = controls, KPI tiles, depot table, FD table, time breakdown. Same family as the Driver Pay Log. */
+:root {
+  --bg: #f2f3f6;
+  --surface: #ffffff;
+  --sunk: #e9ecf2;
+  --ink: #161b26;
+  --muted: #5b6375;
+  --line: #d9dee7;
+  --accent: #b4172f;
+  --accent-ink: #ffffff;
+  --raunds: #e3e9f6;
+  --raunds-ink: #23407a;
+  --glen: #e2f1ea;
+  --glen-ink: #1d6040;
+  --good: #17703f;
+  --good-bg: #e2f3e9;
+  --bad: #b42318;
+  --bad-bg: #fbe4e1;
+  --hl: #fbeef0;
+  --font-display: "Barlow Condensed", "Arial Narrow", "Roboto Condensed", sans-serif;
+  --font-body: "Barlow", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --radius: 10px;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0f1218; --surface: #171b24; --sunk: #1f2430; --ink: #e9ecf3; --muted: #9aa3b5; --line: #2a3140;
+    --accent: #ff5a72; --accent-ink: #22040a; --raunds: #1f2a42; --raunds-ink: #a9c1f2; --glen: #17301f; --glen-ink: #8fdcb0;
+    --good: #52c98a; --good-bg: #16301f; --bad: #ff6e61; --bad-bg: #3a1a17; --hl: #2a1a20; color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0f1218; --surface: #171b24; --sunk: #1f2430; --ink: #e9ecf3; --muted: #9aa3b5; --line: #2a3140;
+  --accent: #ff5a72; --accent-ink: #22040a; --raunds: #1f2a42; --raunds-ink: #a9c1f2; --glen: #17301f; --glen-ink: #8fdcb0;
+  --good: #52c98a; --good-bg: #16301f; --bad: #ff6e61; --bad-bg: #3a1a17; --hl: #2a1a20; color-scheme: dark;
+}
+* { box-sizing: border-box; }
+[hidden] { display: none !important; }
+body { background: var(--bg); color: var(--ink); font-family: var(--font-body); font-size: 15px; line-height: 1.45; }
+body::before { content: ""; position: fixed; inset: 0 0 auto; height: env(safe-area-inset-top, 0px); z-index: 10; background: var(--surface); }
+.wrap { max-width: 1240px; margin: 0 auto; padding-left: max(16px, env(safe-area-inset-left, 0px)); padding-right: max(16px, env(safe-area-inset-right, 0px)); }
+td, .tile b, .num { font-variant-numeric: tabular-nums; }
+h1, h2, h3 { font-family: var(--font-display); font-weight: 700; margin: 0; text-wrap: balance; letter-spacing: .01em; }
+.eyebrow { font-size: 11px; text-transform: uppercase; letter-spacing: .09em; color: var(--muted); font-weight: 600; }
+.note { font-size: 13px; color: var(--muted); margin: 0; }
+
+.top { position: sticky; top: env(safe-area-inset-top, 0px); z-index: 5; background: var(--surface); border-bottom: 1px solid var(--line); }
+.top .wrap { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 6px 20px; padding-block: 12px 0; }
+.top h1 { font-size: 26px; text-transform: uppercase; }
+.top h1 span { color: var(--accent); }
+.sub { margin: 0; color: var(--muted); font-size: 13px; }
+.brand { padding-bottom: 10px; }
+.nav { display: flex; gap: 2px; overflow-x: auto; scrollbar-width: none; max-width: 100%; }
+.nav button { font: inherit; font-weight: 600; background: none; border: 0; border-bottom: 3px solid transparent; padding: 8px 12px 10px; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.nav button[aria-selected="true"] { color: var(--ink); border-bottom-color: var(--accent); }
+
+main.wrap { padding-block: 18px 40px; }
+.panel { display: grid; gap: 16px; }
+.banner { padding: 10px 14px; border-radius: var(--radius); background: var(--bad-bg); color: var(--bad); font-weight: 500; }
+
+.card { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 16px; min-width: 0; }
+.card > h2 { font-size: 21px; margin-bottom: 4px; }
+.controls { display: flex; flex-wrap: wrap; gap: 12px 16px; align-items: end; }
+label { display: grid; gap: 4px; font-size: 13px; font-weight: 600; color: var(--muted); }
+label .opt { font-weight: 500; }
+input[type=text], input[type=email], input[type=number], input[type=date], select {
+  width: 100%; font: inherit; font-size: 16px; color: var(--ink); background: var(--bg);
+  border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; min-width: 0;
+}
+input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+.grow { flex: 1 1 240px; }
+
+.seg { display: inline-flex; background: var(--sunk); border-radius: 10px; padding: 4px; gap: 2px; }
+.seg button { font: inherit; font-weight: 600; border: 0; border-radius: 7px; padding: 8px 12px; background: none; color: var(--muted); cursor: pointer; white-space: nowrap; }
+.seg button[aria-pressed="true"] { background: var(--surface); color: var(--ink); box-shadow: 0 1px 2px rgba(0,0,0,.12); }
+.datenav { display: flex; gap: 6px; align-items: center; }
+.datenav input { width: auto; }
+.iconbtn { width: 40px; height: 40px; flex: none; border-radius: 50%; border: 1px solid var(--line); background: var(--sunk); color: var(--ink); font-size: 20px; cursor: pointer; line-height: 1; }
+.iconbtn:hover { border-color: var(--accent); }
+.btn { font: inherit; font-weight: 600; border-radius: 8px; padding: 9px 16px; cursor: pointer; border: 1px solid var(--line); background: var(--sunk); color: var(--ink); white-space: nowrap; }
+.btn.primary { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.btn:disabled { opacity: .5; cursor: not-allowed; }
+.mini { font: inherit; font-size: 12px; font-weight: 600; padding: 4px 9px; border-radius: 6px; border: 1px solid var(--line); background: var(--surface); color: var(--ink); cursor: pointer; }
+.mini.armed { background: var(--bad); border-color: var(--bad); color: #fff; }
+.rowbtns { display: flex; gap: 6px; justify-content: flex-end; }
+.msg { min-height: 1.2em; font-size: 13px; color: var(--muted); margin: 0; }
+.msg.err { color: var(--bad); }
+.msg.ok { color: var(--good); }
+
+.rangeline { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 8px 16px; }
+.rangeline h2 { font-size: 24px; }
+.rangeline h2 small { font-family: var(--font-body); font-size: 14px; font-weight: 500; color: var(--muted); letter-spacing: 0; }
+
+.tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.tile { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; display: grid; gap: 2px; align-content: start; }
+.tile b { font-family: var(--font-display); font-size: 26px; font-weight: 600; }
+.tile small { color: var(--muted); font-size: 12px; }
+.tile.profit { background: var(--accent); border-color: var(--accent); color: var(--accent-ink); }
+.tile.profit .eyebrow, .tile.profit small { color: inherit; opacity: .85; }
+.tile.cost b { color: var(--bad); }
+
+.block { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; min-width: 0; }
+.block-head { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: 4px 14px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.block-head h3 { font-size: 20px; }
+.block-head .meta { font-size: 13px; color: var(--muted); }
+.scroll { overflow-x: auto; }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th { text-align: right; font-size: 11px; text-transform: uppercase; letter-spacing: .07em; color: var(--muted); font-weight: 600; padding: 8px 12px; background: var(--sunk); white-space: nowrap; }
+td { padding: 8px 12px; border-top: 1px solid var(--line); white-space: nowrap; text-align: right; }
+th.l, td.l { text-align: left; }
+th:first-child, td:first-child { position: sticky; left: 0; z-index: 1; }
+td:first-child { background: var(--surface); }
+tfoot td { font-weight: 600; background: var(--sunk); }
+tr.click { cursor: pointer; }
+tr.click:hover td, tr.sel td { background: var(--hl); }
+tr.dim td { color: var(--muted); }
+td.pos { color: var(--good); font-weight: 600; }
+td.neg { color: var(--bad); font-weight: 600; }
+td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-align: left; }
+.fdname { font-weight: 600; }
+.email { color: var(--muted); font-size: 12px; }
+.chip { display: inline-block; font-size: 12px; font-weight: 600; padding: 2px 8px; border-radius: 999px; background: var(--raunds); color: var(--raunds-ink); }
+.chip.GLENFIELD { background: var(--glen); color: var(--glen-ink); }
+.chip.off { background: var(--sunk); color: var(--muted); }
+.empty { padding: 26px 18px; text-align: center; color: var(--muted); }
+.empty h3 { color: var(--ink); font-size: 20px; margin-bottom: 4px; }
+.empty ol { text-align: left; display: inline-block; margin: 8px 0 0; padding-left: 20px; }
+
+.daycards { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 330px), 1fr)); gap: 12px; }
+.daycard { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 14px; display: grid; gap: 10px; min-width: 0; }
+.daycard.filled { border-color: var(--accent); }
+.daycard header { display: flex; justify-content: space-between; align-items: flex-start; gap: 8px; }
+.daycard .fields { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 8px; }
+.daycard .fields label { font-size: 12px; }
+.daycard .wide { grid-column: 1 / -1; }
+.calc { background: var(--sunk); border-radius: 8px; padding: 8px 10px; font-size: 14px; display: flex; flex-wrap: wrap; gap: 4px 14px; }
+.calc .p { color: var(--good); }
+.calc .n { color: var(--bad); }
+.savebar { position: sticky; bottom: 0; bottom: env(safe-area-inset-bottom, 0px); background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 10px 14px; display: flex; flex-wrap: wrap; justify-content: space-between; align-items: center; gap: 10px; box-shadow: 0 -4px 14px rgba(0,0,0,.08); }
+
+.formgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 200px), 1fr)); gap: 12px; }
+.check { display: flex; align-items: center; gap: 8px; color: var(--ink); font-weight: 500; align-self: end; padding-bottom: 10px; }
+.actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+
+@media (max-width: 1000px) { .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
+@media (max-width: 560px) {
+  .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .tile.profit { grid-column: 1 / -1; }
+  .daycard .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .top h1 { font-size: 22px; }
+  .seg button { padding: 8px 9px; }
+}
+@media (prefers-reduced-motion: reduce) { * { transition: none !important; scroll-behavior: auto !important; } }
+</style>
+
+<header class="top"><div class="wrap">
+  <div class="brand">
+    <h1>DPD <span>P&amp;L</span> Tracker</h1>
+    <p class="sub">Raunds &amp; Glenfield · routes, revenue, costs, profit</p>
+  </div>
+  <nav class="nav" role="tablist" aria-label="Sections">
+    <button role="tab" type="button" data-tab="dashboard" aria-selected="true">Dashboard</button>
+    <button role="tab" type="button" data-tab="daily" aria-selected="false">Daily entry</button>
+    <button role="tab" type="button" data-tab="entries" aria-selected="false">All entries</button>
+    <button role="tab" type="button" data-tab="settings" aria-selected="false">FDs &amp; rates</button>
+  </nav>
+</div></header>
+
+<main class="wrap">
+  <div id="banner" class="banner" hidden></div>
+
+  <!-- DASHBOARD -->
+  <section class="panel" id="tab-dashboard">
+    <div class="card controls">
+      <div class="seg" role="group" aria-label="Time view">
+        <button type="button" data-view="day" aria-pressed="false">Daily</button>
+        <button type="button" data-view="week" aria-pressed="true">Weekly</button>
+        <button type="button" data-view="period" aria-pressed="false">4-week period</button>
+      </div>
+      <div class="datenav">
+        <button class="iconbtn" type="button" id="prevBtn" aria-label="Previous">‹</button>
+        <input type="date" id="dashDate" aria-label="Date">
+        <button class="iconbtn" type="button" id="nextBtn" aria-label="Next">›</button>
+        <button class="btn" type="button" id="todayBtn">Today</button>
+      </div>
+      <label class="grow" for="scopeSel">Showing<select id="scopeSel"></select></label>
+    </div>
+
+    <div class="rangeline">
+      <h2 id="rangeTitle">–</h2>
+      <div class="actions">
+        <button class="btn" type="button" id="exportReportBtn" hidden>Download report (CSV)</button>
+        <p class="msg" id="dashMsg" role="status"></p>
+      </div>
+    </div>
+
+    <div id="dashEmpty" hidden></div>
+
+    <section class="tiles" id="kpis" aria-label="Totals"></section>
+
+    <article class="block">
+      <div class="block-head"><h3>Depots</h3><span class="meta">Raunds and Glenfield separately, then combined. Tap a row to filter.</span></div>
+      <div class="scroll"><table id="depotTable"></table></div>
+    </article>
+
+    <article class="block">
+      <div class="block-head"><h3 id="fdTitle">FDs</h3><span class="meta">Tap an FD to open its own report.</span></div>
+      <div class="scroll"><table id="fdTable"></table></div>
+    </article>
+
+    <article class="block" id="weekBlock" hidden>
+      <div class="block-head"><h3>Week by week</h3><span class="meta">Tap a week to open it.</span></div>
+      <div class="scroll"><table id="weekTable"></table></div>
+    </article>
+
+    <article class="block">
+      <div class="block-head"><h3 id="timeTitle">Day by day</h3><span class="meta" id="timeMeta"></span></div>
+      <div class="scroll"><table id="timeTable"></table></div>
+    </article>
+  </section>
+
+  <!-- DAILY ENTRY -->
+  <section class="panel" id="tab-daily" hidden>
+    <div class="card controls">
+      <div class="datenav">
+        <button class="iconbtn" type="button" id="dayPrev" aria-label="Previous day">‹</button>
+        <input type="date" id="dayDate" aria-label="Date">
+        <button class="iconbtn" type="button" id="dayNext" aria-label="Next day">›</button>
+      </div>
+      <label for="dayDepot">Depot
+        <select id="dayDepot">
+          <option value="ALL">Both depots</option>
+          <option value="RAUNDS">Raunds</option>
+          <option value="GLENFIELD">Glenfield</option>
+        </select>
+      </label>
+      <p class="note grow">Revenue is routes × rate per route. Van hire and insurance fill in from the FD's daily amounts when you type routes. Leave a card blank to skip that FD. Clearing a saved card removes it.</p>
+    </div>
+    <div id="dayCards" class="daycards"></div>
+    <div class="savebar">
+      <div id="dayTotals" class="num">–</div>
+      <div class="actions">
+        <p class="msg" id="dayMsg" role="status"></p>
+        <button class="btn primary" type="button" id="saveDay">Save day</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- ENTRIES -->
+  <section class="panel" id="tab-entries" hidden>
+    <div class="card controls">
+      <label for="entFrom">From<input type="date" id="entFrom"></label>
+      <label for="entTo">To<input type="date" id="entTo"></label>
+      <label class="grow" for="entScope">Showing<select id="entScope"></select></label>
+      <button class="btn" type="button" id="entExport" hidden>Download CSV</button>
+    </div>
+    <p class="msg" id="entMsg" role="status"></p>
+    <article class="block"><div class="scroll"><table id="entTable"></table></div></article>
+  </section>
+
+  <!-- SETTINGS -->
+  <section class="panel" id="tab-settings" hidden>
+    <div class="card">
+      <h2>FDs</h2>
+      <p class="note">Each FD is linked to an email address and a depot. Rate, van hire and insurance are filled in for you on the daily entry screen.</p>
+    </div>
+    <article class="block"><div class="scroll"><table id="fdList"></table></div></article>
+
+    <form class="card" id="fdForm" novalidate>
+      <h2 id="fdFormTitle">Add an FD</h2>
+      <div class="formgrid" style="margin-top:10px">
+        <label for="fdCode">FD number<input type="text" id="fdCode" autocomplete="off" placeholder="e.g. FD1234"></label>
+        <label for="fdEmail">Email<input type="email" id="fdEmail" autocomplete="off" placeholder="e.g. fd1234@yourcompany.co.uk"></label>
+        <label for="fdDepot">Depot<select id="fdDepot"><option value="RAUNDS">Raunds</option><option value="GLENFIELD">Glenfield</option></select></label>
+        <label for="fdDriver">Driver name <span class="opt">(optional)</span><input type="text" id="fdDriver" autocomplete="off"></label>
+        <label for="fdRate">Rate per route £ <span class="opt">(blank = depot rate)</span><input type="number" id="fdRate" min="0" step="0.01" inputmode="decimal"></label>
+        <label for="fdVan">Van hire £ a day<input type="number" id="fdVan" min="0" step="0.01" inputmode="decimal" placeholder="0.00"></label>
+        <label for="fdIns">Insurance £ a day<input type="number" id="fdIns" min="0" step="0.01" inputmode="decimal" placeholder="0.00"></label>
+        <label class="check" for="fdActive"><input type="checkbox" id="fdActive" checked> Active</label>
+      </div>
+      <p class="note" style="margin-top:10px">Moving an FD to the other depot only affects new entries. Past days stay with the depot they were worked at.</p>
+      <div class="actions" style="margin-top:12px">
+        <button class="btn primary" type="submit" id="fdSubmit">Add FD</button>
+        <button class="btn" type="button" id="fdCancel" hidden>Cancel edit</button>
+        <p class="msg" id="fdMsg" role="status"></p>
+      </div>
+    </form>
+
+    <form class="card" id="settingsForm" novalidate>
+      <h2>Depot rates and period</h2>
+      <div class="formgrid" style="margin-top:10px">
+        <label for="rateRAUNDS">Raunds revenue per route £<input type="number" id="rateRAUNDS" min="0" step="0.01" inputmode="decimal"></label>
+        <label for="rateGLENFIELD">Glenfield revenue per route £<input type="number" id="rateGLENFIELD" min="0" step="0.01" inputmode="decimal"></label>
+        <label for="periodAnchor">First day of a 4-week period<input type="date" id="periodAnchor"></label>
+      </div>
+      <p class="note" style="margin-top:10px">Any period start works, past or future. Weeks run 7 days from it, and every period runs 28 days, then resets. New rates apply to days you enter after saving; saved days keep their rate.</p>
+      <div class="actions" style="margin-top:12px">
+        <button class="btn primary" type="submit" id="saveSettings">Save rates and period</button>
+        <p class="msg" id="settingsMsg" role="status"></p>
+      </div>
+    </form>
+  </section>
+</main>
+
+<script>
+(function () {
+  "use strict";
+  const DAY = 864e5;
+  const DEPOTS = ["RAUNDS", "GLENFIELD"];
+  const DEPOT_NAME = { RAUNDS: "Raunds", GLENFIELD: "Glenfield" };
+  const COSTS = [["charging", "Charging"], ["vanHire", "Van hire"], ["insurance", "Insurance"], ["damages", "Van damages"]];
+  const $ = (id) => document.getElementById(id);
+
+  // ---------- dates and money ----------
+  const toT = (s) => { const [y, m, d] = s.split("-").map(Number); return Date.UTC(y, m - 1, d); };
+  const toS = (t) => new Date(t).toISOString().slice(0, 10);
+  const addDays = (s, n) => toS(toT(s) + n * DAY);
+  const todayS = () => { const n = new Date(); return toS(Date.UTC(n.getFullYear(), n.getMonth(), n.getDate())); };
+  const mondayOf = (s) => addDays(s, -((new Date(toT(s)).getUTCDay() + 6) % 7));
+  const fmt = (s, o) => new Date(toT(s)).toLocaleDateString("en-GB", { timeZone: "UTC", ...o });
+  const shortD = (s) => fmt(s, { day: "numeric", month: "short" });
+  const dayD = (s) => fmt(s, { weekday: "short", day: "numeric", month: "short" });
+  const longD = (s) => fmt(s, { weekday: "long", day: "numeric", month: "long", year: "numeric" });
+  const gbp = new Intl.NumberFormat("en-GB", { style: "currency", currency: "GBP" });
+  const money = (v) => gbp.format(Math.round((v || 0) * 100) / 100);
+  const num = (v) => { const n = parseFloat(v); return Number.isFinite(n) ? n : 0; };
+  const pct = (v) => (Number.isFinite(v) ? (v * 100).toFixed(1) + "%" : "–");
+  const esc = (v) => String(v ?? "").replace(/[&<>"']/g, (c) => ({ "&": "&amp;", "<": "&lt;", ">": "&gt;", '"': "&quot;", "'": "&#39;" }[c]));
+  const mod = (a, b) => ((a % b) + b) % b;
+
+  // ---------- state ----------
+  const DEFAULT_SETTINGS = { periodAnchor: mondayOf(todayS()), depotRates: { RAUNDS: 0, GLENFIELD: 0 } };
+  const S = {
+    settings: structuredClone(DEFAULT_SETTINGS), settingsSaved: false,
+    fds: [], fdsLoaded: false,
+    dash: [], dashLoaded: false, day: [], dayLoaded: false, ent: [], entLoaded: false,
+    db: null, dl: null, canWrite: true, offline: false,
+  };
+  const ui = { tab: "dashboard", view: "week", date: todayS(), scope: "ALL", dayDate: todayS(), dayDepot: "ALL", dayDirty: false, entScope: "ALL", editingFd: null };
+  try { const v = localStorage.getItem("pnl-view"); if (v === "day" || v === "week" || v === "period") ui.view = v; } catch (_) {}
+
+  const fdById = (id) => S.fds.find((f) => f.id === id);
+  const fdCode = (id) => (fdById(id) || {}).code || "Removed FD";
+  const fdEmail = (id) => (fdById(id) || {}).email || "";
+  const rateFor = (f) => (f && f.rate !== "" && f.rate != null && Number.isFinite(Number(f.rate)) ? Number(f.rate) : num(S.settings.depotRates[f ? f.depot : "RAUNDS"]));
+  const sortFds = (list) => list.slice().sort((a, b) => a.depot.localeCompare(b.depot) || String(a.code).localeCompare(String(b.code), undefined, { numeric: true }));
+  const chip = (d) => `<span class="chip ${esc(d)}">${esc(DEPOT_NAME[d] || d)}</span>`;
+  const setMsg = (el, text, kind) => { el.textContent = text; el.className = "msg" + (kind ? " " + kind : ""); };
+  const writeErr = (err) => (err && err.code === "quota_exceeded" ? "The tracker is full. Delete old entries to make room." : "Couldn't save. Check your connection and try again.");
+
+  // ---------- periods ----------
+  function periodInfo(s) {
+    const off = Math.round((toT(s) - toT(S.settings.periodAnchor)) / DAY);
+    const p = Math.floor(off / 28);
+    return { no: p + 1, start: addDays(S.settings.periodAnchor, p * 28), week: Math.floor(mod(off, 28) / 7) + 1, weekStart: addDays(S.settings.periodAnchor, Math.floor(off / 7) * 7) };
+  }
+  function rangeFor(view, s) {
+    const p = periodInfo(s);
+    if (view === "day") return [s, s];
+    if (view === "week") return [p.weekStart, addDays(p.weekStart, 6)];
+    return [p.start, addDays(p.start, 27)];
+  }
+
+  // ---------- maths ----------
+  function agg(list) {
+    const t = { routes: 0, revenue: 0, charging: 0, vanHire: 0, insurance: 0, damages: 0, count: list.length };
+    const days = new Set();
+    for (const e of list) {
+      t.routes += num(e.routes);
+      t.revenue += num(e.routes) * num(e.rate);
+      for (const [k] of COSTS) t[k] += num(e[k]);
+      if (num(e.routes) > 0) days.add(e.date);
+    }
+    t.costs = t.charging + t.vanHire + t.insurance + t.damages;
+    t.profit = t.revenue - t.costs;
+    t.rpr = t.routes ? t.revenue / t.routes : 0;
+    t.cpr = t.routes ? t.costs / t.routes : 0;
+    t.ppr = t.routes ? t.profit / t.routes : 0;
+    t.margin = t.revenue ? t.profit / t.revenue : NaN;
+    t.days = days.size;
+    return t;
+  }
+  const scopeFilter = (scope) => scope === "ALL" ? () => true
+    : scope.startsWith("D:") ? ((d) => (e) => e.depot === d)(scope.slice(2))
+    : ((id) => (e) => e.fdId === id)(scope.slice(2));
+  function scopeName(scope) {
+    if (scope === "ALL") return "Both depots";
+    if (scope.startsWith("D:")) return DEPOT_NAME[scope.slice(2)];
+    const f = fdById(scope.slice(2));
+    return f ? f.code : "FD";
+  }
+
+  const HEAD = `<th>Routes</th><th>Revenue</th><th>Rev / route</th><th>Charging</th><th>Van hire</th><th>Insurance</th><th>Damages</th><th>Total costs</th><th>Profit</th><th>Profit / route</th><th>Margin</th>`;
+  const signCls = (v) => (v > 0.004 ? "pos" : v < -0.004 ? "neg" : "");
+  const cells = (t) => `<td>${t.routes}</td><td>${money(t.revenue)}</td><td>${money(t.rpr)}</td>` +
+    COSTS.map(([k]) => `<td>${money(t[k])}</td>`).join("") +
+    `<td>${money(t.costs)}</td><td class="${signCls(t.profit)}">${money(t.profit)}</td><td class="${signCls(t.ppr)}">${money(t.ppr)}</td><td>${pct(t.margin)}</td>`;
+  const fdCell = (id) => `<td class="l"><div class="fdname">${esc(fdCode(id))}</div><div class="email">${esc(fdEmail(id))}</div></td>`;
+
+  function fillScope(sel, value) {
+    let html = `<option value="ALL">Both depots combined</option>` + DEPOTS.map((d) => `<option value="D:${d}">${DEPOT_NAME[d]} depot</option>`).join("");
+    for (const d of DEPOTS) {
+      const fds = sortFds(S.fds.filter((f) => f.depot === d));
+      if (fds.length) html += `<optgroup label="${DEPOT_NAME[d]} FDs">` + fds.map((f) => `<option value="F:${esc(f.id)}">${esc(f.code)} · ${esc(f.email)}${f.active === false ? " (inactive)" : ""}</option>`).join("") + `</optgroup>`;
+    }
+    sel.innerHTML = html;
+    sel.value = value;
+    if (sel.value !== value) sel.value = "ALL";
+    return sel.value;
+  }
+
+  // ============ DASHBOARD ============
+  function renderDashboard() {
+    ui.scope = fillScope($("scopeSel"), ui.scope);
+    $("dashDate").value = ui.date;
+    document.querySelectorAll(".seg button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.view === ui.view)));
+    $("exportReportBtn").hidden = !S.dl;
+
+    const [a, b] = rangeFor(ui.view, ui.date);
+    const p = periodInfo(ui.date);
+    const span = `${shortD(a)} – ${fmt(b, { day: "numeric", month: "short", year: "numeric" })}`;
+    const when = ui.view === "day" ? `${esc(longD(a))} <small>Period ${p.no}, week ${p.week}</small>`
+      : ui.view === "week" ? `Week ${p.week} of period ${p.no} <small>${span}</small>`
+      : `Period ${p.no} <small>${span} · resets ${esc(dayD(addDays(b, 1)))}</small>`;
+    $("rangeTitle").innerHTML = `${esc(scopeName(ui.scope))} · ${when}`;
+
+    const loading = !S.dashLoaded && S.db;
+    const noFds = S.fdsLoaded && !S.fds.length;
+    $("dashEmpty").hidden = !noFds;
+    if (noFds) $("dashEmpty").innerHTML = `<div class="block empty"><h3>Set up your FDs to start</h3><ol>
+      <li>Open <b>FDs &amp; rates</b> and enter each depot's revenue per route and the first day of a 4-week period.</li>
+      <li>Add each FD with its email address and depot.</li>
+      <li>Use <b>Daily entry</b> each day for routes, charging, van hire, insurance and damages.</li></ol></div>`;
+
+    const inRange = S.dash.filter((e) => e.date >= a && e.date <= b);
+    const scoped = inRange.filter(scopeFilter(ui.scope));
+    const t = agg(scoped);
+    const tile = (cls, label, val, note) => `<div class="tile ${cls}"><span class="eyebrow">${label}</span><b>${loading ? "…" : val}</b>${note ? `<small>${note}</small>` : ""}</div>`;
+    $("kpis").innerHTML = [
+      tile("profit", "Profit", money(t.profit), `Margin ${pct(t.margin)}`),
+      tile("", "Revenue", money(t.revenue), `${money(t.rpr)} per route`),
+      tile("", "Routes completed", t.routes.toLocaleString("en-GB"), `${t.days} working day${t.days === 1 ? "" : "s"}`),
+      tile("", "Profit per route", money(t.ppr), `Costs ${money(t.cpr)} per route`),
+      tile("cost", "Total costs", money(t.costs), ""),
+      tile("cost", "Charging", money(t.charging), ""),
+      tile("cost", "Van hire", money(t.vanHire), ""),
+      tile("cost", "Insurance", money(t.insurance), ""),
+      tile("cost", "Van damages", money(t.damages), ""),
+      tile("", "Revenue per route", money(t.rpr), ""),
+    ].join("");
+
+    // depots
+    const depotScope = ui.scope.startsWith("D:") ? ui.scope.slice(2) : ui.scope.startsWith("F:") ? (fdById(ui.scope.slice(2)) || {}).depot : null;
+    $("depotTable").innerHTML = `<thead><tr><th class="l">Depot</th>${HEAD}</tr></thead><tbody>` +
+      DEPOTS.map((d) => `<tr class="click${depotScope === d ? " sel" : ""}" data-scope="D:${d}"><td class="l">${chip(d)}</td>${cells(agg(inRange.filter((e) => e.depot === d)))}</tr>`).join("") +
+      `</tbody><tfoot><tr class="click" data-scope="ALL"><td class="l">Combined</td>${cells(agg(inRange))}</tr></tfoot>`;
+
+    // FDs
+    const dFilter = depotScope ? (e) => e.depot === depotScope : () => true;
+    const ids = new Set(inRange.filter(dFilter).map((e) => e.fdId));
+    let fds = sortFds(S.fds.filter((f) => ids.has(f.id) || (f.active !== false && (!depotScope || f.depot === depotScope))));
+    for (const id of ids) if (!fdById(id)) fds.push({ id, code: "Removed FD", email: "", depot: "" });
+    $("fdTitle").textContent = depotScope ? `FDs at ${DEPOT_NAME[depotScope]}` : "FDs at both depots";
+    $("fdTable").innerHTML = `<thead><tr><th class="l">FD and email</th><th class="l">Depot</th>${HEAD}</tr></thead><tbody>` +
+      (fds.length ? fds.map((f) => {
+        const ft = agg(inRange.filter((e) => e.fdId === f.id && dFilter(e)));
+        return `<tr class="click${ui.scope === "F:" + f.id ? " sel" : ""}${ft.count ? "" : " dim"}" data-scope="F:${esc(f.id)}">${fdCell(f.id)}<td class="l">${f.depot ? chip(f.depot) : ""}</td>${cells(ft)}</tr>`;
+      }).join("") : `<tr><td class="l" colspan="13">No FDs yet. Add them under FDs &amp; rates.</td></tr>`) +
+      `</tbody>` + (fds.length ? `<tfoot><tr><td class="l">Total</td><td></td>${cells(agg(inRange.filter(dFilter)))}</tr></tfoot>` : "");
+
+    // weeks (period view)
+    $("weekBlock").hidden = ui.view !== "period";
+    if (ui.view === "period") {
+      let rows = "";
+      for (let w = 0; w < 4; w++) {
+        const ws = addDays(a, w * 7), we = addDays(ws, 6);
+        const wt = agg(scoped.filter((e) => e.date >= ws && e.date <= we));
+        rows += `<tr class="click${wt.count ? "" : " dim"}" data-week="${ws}"><td class="l">Week ${w + 1} <span class="email">${shortD(ws)} – ${shortD(we)}</span></td>${cells(wt)}</tr>`;
+      }
+      $("weekTable").innerHTML = `<thead><tr><th class="l">Week</th>${HEAD}</tr></thead><tbody>${rows}</tbody><tfoot><tr><td class="l">Period total</td>${cells(t)}</tr></tfoot>`;
+    }
+
+    // day breakdown
+    if (ui.view === "day") {
+      $("timeTitle").textContent = "FDs on this day";
+      $("timeMeta").textContent = "";
+      const rows = scoped.slice().sort((x, y) => x.depot.localeCompare(y.depot) || fdCode(x.fdId).localeCompare(fdCode(y.fdId), undefined, { numeric: true }));
+      $("timeTable").innerHTML = `<thead><tr><th class="l">FD and email</th><th class="l">Depot</th>${HEAD}<th class="l">Notes</th></tr></thead><tbody>` +
+        (rows.length ? rows.map((e) => `<tr>${fdCell(e.fdId)}<td class="l">${chip(e.depot)}</td>${cells(agg([e]))}<td class="wrapcell">${esc(e.notes || "")}</td></tr>`).join("")
+          : `<tr><td class="l" colspan="14">${loading ? "Loading…" : "Nothing entered for this day yet. Use Daily entry to add it."}</td></tr>`) +
+        `</tbody>` + (rows.length ? `<tfoot><tr><td class="l">Total</td><td></td>${cells(t)}<td></td></tr></tfoot>` : "");
+    } else {
+      $("timeTitle").textContent = "Day by day";
+      $("timeMeta").textContent = "Tap a day to open it.";
+      let rows = "";
+      for (let d = a; d <= b; d = addDays(d, 1)) {
+        const dt = agg(scoped.filter((e) => e.date === d));
+        rows += `<tr class="click${dt.count ? "" : " dim"}" data-day="${d}"><td class="l">${esc(dayD(d))}</td>${cells(dt)}</tr>`;
+      }
+      $("timeTable").innerHTML = `<thead><tr><th class="l">Day</th>${HEAD}</tr></thead><tbody>${rows}</tbody><tfoot><tr><td class="l">Total</td>${cells(t)}</tr></tfoot>`;
+    }
+  }
+
+  // ============ DAILY ENTRY ============
+  const FIELDS = ["routes", "rate", "charging", "vanHire", "insurance", "damages"];
+  function renderDaily(force) {
+    $("dayDate").value = ui.dayDate;
+    $("dayDepot").value = ui.dayDepot;
+    if (ui.dayDirty && !force) { updateDayTotals(); return; }
+    const byFd = new Map(S.day.map((e) => [e.fdId, e]));
+    let fds = S.fds.filter((f) => f.active !== false || byFd.has(f.id));
+    if (ui.dayDepot !== "ALL") fds = fds.filter((f) => f.depot === ui.dayDepot);
+    fds = sortFds(fds);
+    const v = (x) => (x === 0 || x ? x : "");
+    if (!S.fdsLoaded || (S.db && !S.dayLoaded)) { $("dayCards").innerHTML = `<div class="block empty"><h3>Loading…</h3></div>`; updateDayTotals(); return; }
+    if (!S.fds.length) { $("dayCards").innerHTML = `<div class="block empty"><h3>No FDs yet</h3><p>Add your FDs under <b>FDs &amp; rates</b> first.</p></div>`; updateDayTotals(); return; }
+    if (!fds.length) { $("dayCards").innerHTML = `<div class="block empty"><h3>No active FDs at this depot</h3></div>`; updateDayTotals(); return; }
+    $("dayCards").innerHTML = fds.map((f) => {
+      const e = byFd.get(f.id) || {};
+      const rate = e.date ? e.rate : rateFor(f);
+      const fld = (name, label, step) => `<label>${label}<input type="number" min="0" step="${step}" inputmode="${step === "1" ? "numeric" : "decimal"}" name="${name}" id="d-${esc(f.id)}-${name}" value="${v(name === "rate" ? rate : e[name])}"></label>`;
+      return `<div class="daycard${e.date ? " filled" : ""}" data-fd="${esc(f.id)}">
+        <header><div><div class="fdname">${esc(f.code)}${f.driver ? ` <span class="email">· ${esc(f.driver)}</span>` : ""}</div><div class="email">${esc(f.email)}</div></div>${chip(e.depot || f.depot)}</header>
+        <div class="fields">
+          ${fld("routes", "Routes", "1")}${fld("rate", "Rate / route £", "0.01")}${fld("charging", "Charging £", "0.01")}
+          ${fld("vanHire", "Van hire £", "0.01")}${fld("insurance", "Insurance £", "0.01")}${fld("damages", "Van damages £", "0.01")}
+          <label class="wide">Notes <span class="opt">(optional)</span><input type="text" name="notes" id="d-${esc(f.id)}-notes" autocomplete="off" value="${esc(e.notes || "")}"></label>
+        </div>
+        <div class="calc"></div>
+      </div>`;
+    }).join("");
+    document.querySelectorAll(".daycard").forEach(updateCard);
+    updateDayTotals();
+  }
+  function readCard(card) {
+    const g = (n) => card.querySelector(`[name="${n}"]`).value;
+    const d = { notes: g("notes").trim() };
+    for (const k of FIELDS) d[k] = g(k);
+    return d;
+  }
+  const blank = (d) => ["routes", "charging", "vanHire", "insurance", "damages"].every((k) => num(d[k]) === 0) && !d.notes;
+  function updateCard(card) {
+    const d = readCard(card);
+    const t = agg([d]);
+    card.querySelector(".calc").innerHTML = blank(d) ? `<span class="email">Not entered</span>`
+      : `<span>Revenue <b>${money(t.revenue)}</b></span><span>Costs <b>${money(t.costs)}</b></span><span>Profit <b class="${t.profit >= 0 ? "p" : "n"}">${money(t.profit)}</b></span>`;
+  }
+  function updateDayTotals() {
+    const list = [...document.querySelectorAll(".daycard")].map(readCard).filter((d) => !blank(d));
+    const t = agg(list);
+    $("dayTotals").innerHTML = `<b>${t.routes}</b> routes · Revenue <b>${money(t.revenue)}</b> · Costs <b>${money(t.costs)}</b> · Profit <b style="color:var(${t.profit >= 0 ? "--good" : "--bad"})">${money(t.profit)}</b>`;
+    $("saveDay").disabled = !S.canWrite || !document.querySelector(".daycard");
+  }
+  async function saveDay() {
+    const msg = $("dayMsg");
+    if (!S.db) { setMsg(msg, "Saving isn't available here. Open this page on claude.ai while signed in.", "err"); return; }
+    const date = ui.dayDate;
+    const byFd = new Map(S.day.map((e) => [e.fdId, e]));
+    const jobs = [];
+    let saved = 0, removed = 0;
+    for (const card of document.querySelectorAll(".daycard")) {
+      const fdId = card.dataset.fd, f = fdById(fdId), d = readCard(card), prev = byFd.get(fdId);
+      const ref = S.db.collection("entries").doc(`${date}_${fdId}`);
+      if (blank(d)) { if (prev) { jobs.push(ref.delete()); removed++; } continue; }
+      const doc = {
+        date, fdId, depot: prev ? prev.depot : f.depot,
+        routes: Math.max(0, Math.round(num(d.routes))), rate: num(d.rate),
+        charging: num(d.charging), vanHire: num(d.vanHire), insurance: num(d.insurance), damages: num(d.damages),
+        notes: d.notes,
+      };
+      const same = prev && ["depot", ...FIELDS, "notes"].every((k) => (k === "notes" ? (prev.notes || "") === doc.notes : prev[k] === doc[k]));
+      saved++;
+      if (!same) jobs.push(ref.set({ ...doc, savedAt: new Date().toISOString() }));
+    }
+    $("saveDay").disabled = true;
+    try {
+      await Promise.all(jobs);
+      ui.dayDirty = false;
+      setMsg(msg, `Saved ${dayD(date)}: ${saved} FD${saved === 1 ? "" : "s"}${removed ? `, ${removed} cleared` : ""}.`, "ok");
+      renderDaily(true);
+    } catch (err) { setMsg(msg, writeErr(err), "err"); }
+    finally { updateDayTotals(); }
+  }
+
+  // ============ ENTRIES ============
+  function filteredEntries() {
+    return S.ent.filter(scopeFilter(ui.entScope)).sort((x, y) => y.date.localeCompare(x.date) || x.depot.localeCompare(y.depot) || fdCode(x.fdId).localeCompare(fdCode(y.fdId), undefined, { numeric: true }));
+  }
+  function renderEntries() {
+    ui.entScope = fillScope($("entScope"), ui.entScope);
+    $("entExport").hidden = !S.dl;
+    const list = filteredEntries();
+    const head = `<thead><tr><th class="l">Date</th><th class="l">FD and email</th><th class="l">Depot</th><th>Routes</th><th>Rate</th><th>Revenue</th><th>Charging</th><th>Van hire</th><th>Insurance</th><th>Damages</th><th>Profit</th><th class="l">Notes</th><th></th></tr></thead>`;
+    const body = list.map((e) => {
+      const t = agg([e]);
+      return `<tr><td class="l">${esc(dayD(e.date))}</td>${fdCell(e.fdId)}<td class="l">${chip(e.depot)}</td><td>${e.routes}</td><td>${money(e.rate)}</td><td>${money(t.revenue)}</td>` +
+        COSTS.map(([k]) => `<td>${money(e[k])}</td>`).join("") +
+        `<td class="${signCls(t.profit)}">${money(t.profit)}</td><td class="wrapcell">${esc(e.notes || "")}</td>
+        <td><div class="rowbtns"><button type="button" class="mini" data-edit="${esc(e.date)}">Edit day</button>${S.canWrite ? `<button type="button" class="mini" data-del="${esc(e.id)}">Delete</button>` : ""}</div></td></tr>`;
+    }).join("");
+    const t = agg(list);
+    $("entTable").innerHTML = head + `<tbody>${body || `<tr><td class="l" colspan="13">${S.db && !S.entLoaded ? "Loading…" : "No entries in these dates."}</td></tr>`}</tbody>` +
+      (list.length ? `<tfoot><tr><td class="l">Total</td><td class="l">${list.length} entries</td><td></td><td>${t.routes}</td><td>${money(t.rpr)}</td><td>${money(t.revenue)}</td>${COSTS.map(([k]) => `<td>${money(t[k])}</td>`).join("")}<td class="${signCls(t.profit)}">${money(t.profit)}</td><td></td><td></td></tr></tfoot>` : "");
+  }
+
+  // ============ SETTINGS ============
+  function renderSettings() {
+    const fds = sortFds(S.fds);
+    $("fdList").innerHTML = `<thead><tr><th class="l">FD</th><th class="l">Email</th><th class="l">Depot</th><th class="l">Driver</th><th>Rate / route</th><th>Van hire / day</th><th>Insurance / day</th><th class="l">Status</th><th></th></tr></thead><tbody>` +
+      (fds.length ? fds.map((f) => {
+        const own = f.rate !== "" && f.rate != null;
+        return `<tr><td class="l fdname">${esc(f.code)}</td><td class="l">${esc(f.email)}</td><td class="l">${chip(f.depot)}</td><td class="l">${esc(f.driver || "")}</td>
+          <td>${own ? money(f.rate) : `<span class="email">${money(rateFor(f))} depot</span>`}</td><td>${money(f.vanHire)}</td><td>${money(f.insurance)}</td>
+          <td class="l">${f.active === false ? `<span class="chip off">Inactive</span>` : "Active"}</td>
+          <td>${S.canWrite ? `<div class="rowbtns"><button type="button" class="mini" data-fdedit="${esc(f.id)}">Edit</button><button type="button" class="mini" data-fddel="${esc(f.id)}">Delete</button></div>` : ""}</td></tr>`;
+      }).join("") : `<tr><td class="l" colspan="9">${S.db && !S.fdsLoaded ? "Loading…" : "No FDs yet. Add your first one below."}</td></tr>`) + `</tbody>`;
+  }
+  function fillSettingsForm() {
+    $("rateRAUNDS").value = S.settings.depotRates.RAUNDS || "";
+    $("rateGLENFIELD").value = S.settings.depotRates.GLENFIELD || "";
+    $("periodAnchor").value = S.settings.periodAnchor;
+  }
+  function resetFdForm() {
+    $("fdForm").reset(); $("fdActive").checked = true; ui.editingFd = null;
+    $("fdFormTitle").textContent = "Add an FD"; $("fdSubmit").textContent = "Add FD"; $("fdCancel").hidden = true;
+  }
+  function editFd(id) {
+    const f = fdById(id); if (!f) return;
+    ui.editingFd = id;
+    $("fdCode").value = f.code; $("fdEmail").value = f.email; $("fdDepot").value = f.depot; $("fdDriver").value = f.driver || "";
+    $("fdRate").value = f.rate === "" || f.rate == null ? "" : f.rate; $("fdVan").value = f.vanHire || ""; $("fdIns").value = f.insurance || "";
+    $("fdActive").checked = f.active !== false;
+    $("fdFormTitle").textContent = `Edit ${f.code}`; $("fdSubmit").textContent = "Save FD"; $("fdCancel").hidden = false;
+    setMsg($("fdMsg"), "");
+    $("fdForm").scrollIntoView({ behavior: "smooth", block: "center" });
+    $("fdCode").focus({ preventScroll: true });
+  }
+  async function submitFd(ev) {
+    ev.preventDefault();
+    const msg = $("fdMsg");
+    if (!S.db) { setMsg(msg, "Saving isn't available here.", "err"); return; }
+    const code = $("fdCode").value.trim(), email = $("fdEmail").value.trim();
+    const missing = [!code && "FD number", !email && "email"].filter(Boolean);
+    if (missing.length) { setMsg(msg, `Add the ${missing.join(" and ")} before saving.`, "err"); return; }
+    const dup = S.fds.find((f) => f.id !== ui.editingFd && (f.code.toLowerCase() === code.toLowerCase() || f.email.toLowerCase() === email.toLowerCase()));
+    if (dup && $("fdSubmit").dataset.dup !== "1") {
+      setMsg(msg, `${dup.code} (${dup.email}) already uses that FD number or email. Press save again to keep both.`, "err");
+      $("fdSubmit").dataset.dup = "1"; return;
+    }
+    $("fdSubmit").dataset.dup = "";
+    const doc = {
+      code, email, depot: $("fdDepot").value, driver: $("fdDriver").value.trim(),
+      rate: $("fdRate").value === "" ? "" : num($("fdRate").value), vanHire: num($("fdVan").value), insurance: num($("fdIns").value),
+      active: $("fdActive").checked,
+    };
+    $("fdSubmit").disabled = true;
+    try {
+      if (ui.editingFd) await S.db.collection("fds").doc(ui.editingFd).set(doc); else await S.db.collection("fds").add(doc);
+      setMsg(msg, `${ui.editingFd ? "Saved" : "Added"} ${code}.`, "ok");
+      resetFdForm();
+    } catch (err) { setMsg(msg, writeErr(err), "err"); }
+    finally { $("fdSubmit").disabled = !S.canWrite; }
+  }
+  async function deleteFd(btn) {
+    const id = btn.dataset.fddel, f = fdById(id), msg = $("fdMsg");
+    if (!arm(btn)) return;
+    btn.disabled = true;
+    try {
+      const used = await S.db.collection("entries").where("fdId", "==", id).limit(1).get();
+      if (!used.empty) { setMsg(msg, `${f.code} has saved days, so it can't be deleted. Edit it and untick Active to hide it but keep its history.`, "err"); btn.disabled = false; return; }
+      await S.db.collection("fds").doc(id).delete();
+      if (ui.editingFd === id) resetFdForm();
+      setMsg(msg, `Deleted ${f.code}.`, "ok");
+    } catch (err) { btn.disabled = false; setMsg(msg, "Couldn't delete. Try again.", "err"); }
+  }
+  async function submitSettings(ev) {
+    ev.preventDefault();
+    const msg = $("settingsMsg");
+    if (!S.db) { setMsg(msg, "Saving isn't available here.", "err"); return; }
+    const anchor = $("periodAnchor").value;
+    if (!anchor) { setMsg(msg, "Pick the first day of a 4-week period.", "err"); return; }
+    $("saveSettings").disabled = true;
+    try {
+      await S.db.doc("settings/main").set({ periodAnchor: anchor, depotRates: { RAUNDS: num($("rateRAUNDS").value), GLENFIELD: num($("rateGLENFIELD").value) } });
+      setMsg(msg, "Rates and period saved.", "ok");
+    } catch (err) { setMsg(msg, writeErr(err), "err"); }
+    finally { $("saveSettings").disabled = !S.canWrite; }
+  }
+
+  // ---------- small helpers ----------
+  function arm(btn) {
+    if (btn.classList.contains("armed")) return true;
+    btn.classList.add("armed"); const old = btn.textContent; btn.textContent = "Confirm";
+    setTimeout(() => { btn.classList.remove("armed"); btn.textContent = old; }, 3500);
+    return false;
+  }
+  async function saveCsv(rows, filename, msgEl) {
+    if (!S.dl) return;
+    const cell = (v) => { const s = String(v ?? ""); return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s; };
+    try { await S.dl.save({ filename, data: "﻿" + rows.map((r) => r.map(cell).join(",")).join("\r\n") }); setMsg(msgEl, "Report ready.", "ok"); }
+    catch (err) { if (err && err.code !== "declined") setMsg(msgEl, "Couldn't create the file. Try again.", "err"); }
+  }
+  const CSV_HEAD = ["Routes", "Revenue", "Revenue per route", "Charging", "Van hire", "Insurance", "Van damages", "Total costs", "Profit", "Profit per route", "Margin %"];
+  const csvRow = (t) => [t.routes, ...[t.revenue, t.rpr, t.charging, t.vanHire, t.insurance, t.damages, t.costs, t.profit, t.ppr].map((v) => v.toFixed(2)), Number.isFinite(t.margin) ? (t.margin * 100).toFixed(1) : ""];
+  function exportReport() {
+    const [a, b] = rangeFor(ui.view, ui.date);
+    const inRange = S.dash.filter((e) => e.date >= a && e.date <= b);
+    const scoped = inRange.filter(scopeFilter(ui.scope));
+    const rows = [["DPD P&L report", scopeName(ui.scope), `${a} to ${b}`], [], ["Depot", ...CSV_HEAD]];
+    DEPOTS.forEach((d) => rows.push([DEPOT_NAME[d], ...csvRow(agg(inRange.filter((e) => e.depot === d)))]));
+    rows.push(["Combined", ...csvRow(agg(inRange))], [], ["FD", "Email", "Depot", ...CSV_HEAD]);
+    sortFds(S.fds).forEach((f) => { const l = inRange.filter((e) => e.fdId === f.id); if (l.length || f.active !== false) rows.push([f.code, f.email, DEPOT_NAME[f.depot], ...csvRow(agg(l))]); });
+    rows.push([], [`Day by day: ${scopeName(ui.scope)}`], ["Date", ...CSV_HEAD]);
+    for (let d = a; d <= b; d = addDays(d, 1)) rows.push([d, ...csvRow(agg(scoped.filter((e) => e.date === d)))]);
+    saveCsv(rows, `dpd-pnl-${ui.view}-${a}.csv`, $("dashMsg"));
+  }
+  function exportEntries() {
+    const rows = [["Date", "Period", "Week", "Depot", "FD", "Email", "Routes", "Rate per route", "Revenue", "Charging", "Van hire", "Insurance", "Van damages", "Total costs", "Profit", "Notes"]];
+    filteredEntries().reverse().forEach((e) => {
+      const p = periodInfo(e.date), t = agg([e]);
+      rows.push([e.date, p.no, p.week, DEPOT_NAME[e.depot], fdCode(e.fdId), fdEmail(e.fdId), e.routes, e.rate, t.revenue.toFixed(2), e.charging, e.vanHire, e.insurance, e.damages, t.costs.toFixed(2), t.profit.toFixed(2), e.notes || ""]);
+    });
+    saveCsv(rows, `dpd-entries-${$("entFrom").value}-to-${$("entTo").value}.csv`, $("entMsg"));
+  }
+
+  // ---------- data subscriptions ----------
+  const subs = {};
+  let slowTimer = null;
+  function banner(t) { $("banner").textContent = t; $("banner").hidden = !t; }
+  function watchSlow() {
+    clearTimeout(slowTimer);
+    slowTimer = setTimeout(() => banner("The tracker can't be reached right now. Figures may be out of date."), 10000);
+  }
+  function listen(key, query, onData) {
+    if (subs[key] && subs[key].sig === query.sig) return;
+    if (subs[key]) subs[key].off();
+    watchSlow();
+    const off = query.q.onSnapshot((snap) => {
+      onData(snap.docs.map((d) => ({ id: d.id, ...d.data() })));
+      if (!snap.metadata.fromCache) { clearTimeout(slowTimer); banner(""); }
+      render();
+    }, () => { clearTimeout(slowTimer); banner("The tracker stopped updating. Reload the page to reconnect."); render(); });
+    subs[key] = { sig: query.sig, off };
+  }
+  const rangeQ = (a, b) => ({ sig: a + "|" + b, q: S.db.collection("entries").where("date", ">=", a).where("date", "<=", b) });
+  function syncSubs() {
+    if (!S.db) return;
+    const [pa, pb] = rangeFor("period", ui.date);
+    const [wa, wb] = rangeFor(ui.view, ui.date);
+    const a = wa < pa ? wa : pa, b = wb > pb ? wb : pb;
+    if (!subs.dash || subs.dash.sig !== a + "|" + b) S.dashLoaded = false;
+    listen("dash", rangeQ(a, b), (rows) => { S.dash = rows; S.dashLoaded = true; });
+    if (ui.tab === "daily") {
+      if (!subs.day || subs.day.sig !== ui.dayDate + "|" + ui.dayDate) { S.dayLoaded = false; S.day = []; }
+      listen("day", rangeQ(ui.dayDate, ui.dayDate), (rows) => { S.day = rows; S.dayLoaded = true; });
+    }
+    if (ui.tab === "entries") {
+      const ea = $("entFrom").value, eb = $("entTo").value;
+      if (ea && eb) {
+        if (!subs.ent || subs.ent.sig !== ea + "|" + eb) S.entLoaded = false;
+        listen("ent", rangeQ(ea, eb), (rows) => { S.ent = rows; S.entLoaded = true; });
+      }
+    }
+  }
+
+  function render() {
+    if (ui.tab === "dashboard") renderDashboard();
+    else if (ui.tab === "daily") renderDaily();
+    else if (ui.tab === "entries") renderEntries();
+    else renderSettings();
+  }
+  function showTab(tab) {
+    ui.tab = tab;
+    document.querySelectorAll(".nav button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
+    document.querySelectorAll(".panel").forEach((p) => { p.hidden = p.id !== "tab-" + tab; });
+    if (tab === "daily") ui.dayDirty = false;
+    if (tab === "entries" && !$("entFrom").value) { const [a, b] = rangeFor("period", todayS()); $("entFrom").value = a; $("entTo").value = b; }
+    syncSubs();
+    render();
+    window.scrollTo(0, 0);
+  }
+  function setDash(changes) { Object.assign(ui, changes); try { localStorage.setItem("pnl-view", ui.view); } catch (_) {} syncSubs(); renderDashboard(); }
+
+  // ---------- wiring ----------
+  document.querySelector(".nav").addEventListener("click", (e) => { const b = e.target.closest("button[data-tab]"); if (b) showTab(b.dataset.tab); });
+  document.querySelector(".seg").addEventListener("click", (e) => { const b = e.target.closest("button[data-view]"); if (b) setDash({ view: b.dataset.view }); });
+  const step = () => (ui.view === "day" ? 1 : ui.view === "week" ? 7 : 28);
+  $("prevBtn").addEventListener("click", () => setDash({ date: addDays(ui.date, -step()) }));
+  $("nextBtn").addEventListener("click", () => setDash({ date: addDays(ui.date, step()) }));
+  $("todayBtn").addEventListener("click", () => setDash({ date: todayS() }));
+  $("dashDate").addEventListener("change", (e) => { if (e.target.value) setDash({ date: e.target.value }); });
+  $("scopeSel").addEventListener("change", (e) => setDash({ scope: e.target.value }));
+  $("exportReportBtn").addEventListener("click", exportReport);
+  for (const id of ["depotTable", "fdTable"]) $(id).addEventListener("click", (e) => {
+    const tr = e.target.closest("tr[data-scope]"); if (!tr) return;
+    setDash({ scope: tr.dataset.scope }); window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+  for (const id of ["weekTable", "timeTable"]) $(id).addEventListener("click", (e) => {
+    const tr = e.target.closest("tr[data-day], tr[data-week]"); if (!tr) return;
+    setDash(tr.dataset.day ? { view: "day", date: tr.dataset.day } : { view: "week", date: tr.dataset.week });
+    window.scrollTo({ top: 0, behavior: "smooth" });
+  });
+
+  const setDay = (d) => { ui.dayDate = d; ui.dayDirty = false; setMsg($("dayMsg"), ""); syncSubs(); renderDaily(true); };
+  $("dayDate").addEventListener("change", (e) => { if (e.target.value) setDay(e.target.value); });
+  $("dayPrev").addEventListener("click", () => setDay(addDays(ui.dayDate, -1)));
+  $("dayNext").addEventListener("click", () => setDay(addDays(ui.dayDate, 1)));
+  $("dayDepot").addEventListener("change", (e) => { ui.dayDepot = e.target.value; renderDaily(true); });
+  $("dayCards").addEventListener("input", (e) => {
+    const card = e.target.closest(".daycard"); if (!card) return;
+    ui.dayDirty = true;
+    if (e.target.name === "routes" && num(e.target.value) > 0) {
+      const f = fdById(card.dataset.fd), van = card.querySelector('[name="vanHire"]'), ins = card.querySelector('[name="insurance"]');
+      if (f && van.value === "" && num(f.vanHire)) van.value = f.vanHire;
+      if (f && ins.value === "" && num(f.insurance)) ins.value = f.insurance;
+    }
+    updateCard(card); updateDayTotals();
+  });
+  $("saveDay").addEventListener("click", saveDay);
+
+  for (const id of ["entFrom", "entTo"]) $(id).addEventListener("change", () => { syncSubs(); renderEntries(); });
+  $("entScope").addEventListener("change", (e) => { ui.entScope = e.target.value; renderEntries(); });
+  $("entExport").addEventListener("click", exportEntries);
+  $("entTable").addEventListener("click", async (e) => {
+    const ed = e.target.closest("[data-edit]");
+    if (ed) { ui.dayDate = ed.dataset.edit; ui.dayDepot = "ALL"; showTab("daily"); return; }
+    const del = e.target.closest("[data-del]");
+    if (!del || !arm(del)) return;
+    del.disabled = true;
+    try { await S.db.collection("entries").doc(del.dataset.del).delete(); setMsg($("entMsg"), "Entry deleted.", "ok"); }
+    catch (err) { del.disabled = false; setMsg($("entMsg"), "Couldn't delete that entry. Try again.", "err"); }
+  });
+
+  $("fdForm").addEventListener("submit", submitFd);
+  $("fdForm").addEventListener("input", () => { $("fdSubmit").dataset.dup = ""; });
+  $("fdCancel").addEventListener("click", () => { resetFdForm(); setMsg($("fdMsg"), ""); });
+  $("fdList").addEventListener("click", (e) => {
+    const ed = e.target.closest("[data-fdedit]"); if (ed) return editFd(ed.dataset.fdedit);
+    const del = e.target.closest("[data-fddel]"); if (del) return deleteFd(del);
+  });
+  $("settingsForm").addEventListener("submit", submitSettings);
+
+  function setWritable(ok) {
+    S.canWrite = ok;
+    for (const id of ["saveDay", "fdSubmit", "saveSettings"]) $(id).disabled = !ok;
+    render();
+  }
+
+  // ---------- start ----------
+  fillSettingsForm();
+  showTab("dashboard");
+
+  (async () => {
+    const claude = window.claude;
+    const unavailable = () => { banner("Saving isn't available here. Open this page on claude.ai while signed in."); S.fdsLoaded = true; setWritable(false); };
+    if (!claude || !claude.use) return unavailable();
+    const [db, user, dl] = await Promise.all([claude.use("db"), claude.use("user"), claude.use("downloads")]);
+    S.dl = dl;
+    if (!db) return unavailable();
+    S.db = db;
+    if (user) { try { if ((await user.can("data.write")) === false) { setWritable(false); banner("You can view these figures but not change them."); } } catch (_) {} }
+    db.doc("settings/main").onSnapshot((snap) => {
+      const prev = S.settings.periodAnchor;
+      const d = snap.exists ? snap.data() : {};
+      S.settings = { periodAnchor: d.periodAnchor || DEFAULT_SETTINGS.periodAnchor, depotRates: { ...DEFAULT_SETTINGS.depotRates, ...(d.depotRates || {}) } };
+      S.settingsSaved = snap.exists;
+      fillSettingsForm();
+      if (prev !== S.settings.periodAnchor) syncSubs();
+      render();
+    }, () => {});
+    db.collection("fds").onSnapshot((snap) => {
+      S.fds = snap.docs.map((d) => ({ id: d.id, ...d.data() }));
+      S.fdsLoaded = true;
+      if (!S.fds.length && ui.tab === "dashboard" && !S.everHadFds) showTab("settings"); else render();
+      if (S.fds.length) S.everHadFds = true;
+    }, () => { banner("The tracker stopped updating. Reload the page to reconnect."); });
+    syncSubs();
+    render();
+  })();
+})();
+</script>
