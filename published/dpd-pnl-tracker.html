@@ -165,7 +165,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
   <nav class="nav" role="tablist" aria-label="Sections">
     <button role="tab" type="button" data-tab="dashboard" aria-selected="true">Dashboard</button>
     <button role="tab" type="button" data-tab="daily" aria-selected="false">Daily entry</button>
-    <button role="tab" type="button" data-tab="charges" aria-selected="false">Van hire &amp; insurance</button>
+    <button role="tab" type="button" data-tab="charges" aria-selected="false">Wages, van &amp; insurance</button>
     <button role="tab" type="button" data-tab="entries" aria-selected="false">All entries</button>
     <button role="tab" type="button" data-tab="settings" aria-selected="false">FDs &amp; rates</button>
   </nav>
@@ -239,7 +239,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
           <option value="GLENFIELD">Glenfield</option>
         </select>
       </label>
-      <p class="note grow">Revenue is routes × rate per route, plus any extra income. Extra payments you make count as a cost. Van hire and insurance are 4-weekly, so they're not entered here. Leave a card blank to skip that FD. Clearing a saved card removes it.</p>
+      <p class="note grow">Revenue is routes × rate per route, plus any extra income. Extra payments you make count as a cost. Driver wages, van hire and insurance are 4-weekly, so they're not entered here. Leave a card blank to skip that FD. Clearing a saved card removes it.</p>
     </div>
     <div id="dayCards" class="daycards"></div>
     <div class="savebar">
@@ -259,7 +259,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
         <div><span class="eyebrow">4-week period</span><h2 id="pcTitle" style="font-size:21px">–</h2></div>
         <button class="iconbtn" type="button" id="pcNext" aria-label="Next period">›</button>
       </div>
-      <p class="note grow">Van hire and insurance are charged once per 4-week period, whatever the number of days worked. Each active FD is charged its usual 4-weekly amount (set under FDs &amp; rates). Change a figure here for just this period, then save. Saving also fixes this period's figures, so later changes to an FD's usual amount won't alter it.</p>
+      <p class="note grow">Driver wages, van hire and insurance are charged once per 4-week period, whatever the number of days worked. Each active FD is charged its usual 4-weekly amounts (set under FDs &amp; rates). Enter each period's actual wages here, change any other figure for just this period, then save. Saving also fixes this period's figures, so later changes to an FD's usual amount won't alter it.</p>
     </div>
     <article class="block"><div class="scroll"><table id="pcTable"></table></div></article>
     <div class="savebar">
@@ -287,7 +287,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
   <section class="panel" id="tab-settings" hidden>
     <div class="card">
       <h2>FDs</h2>
-      <p class="note">Each FD is linked to an email address and a depot. The rate is filled in on the daily entry screen. Van hire and insurance are the usual 4-weekly amounts, charged automatically each period.</p>
+      <p class="note">Each FD is linked to an email address and a depot. The rate is filled in on the daily entry screen. Driver wages, van hire and insurance are the usual 4-weekly amounts, charged automatically each period. Wages can be changed for each period on the Wages, van &amp; insurance tab.</p>
     </div>
     <article class="block"><div class="scroll"><table id="fdList"></table></div></article>
 
@@ -299,6 +299,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
         <label for="fdDepot">Depot<select id="fdDepot"><option value="RAUNDS">Raunds</option><option value="GLENFIELD">Glenfield</option></select></label>
         <label for="fdDriver">Driver name <span class="opt">(optional)</span><input type="text" id="fdDriver" autocomplete="off"></label>
         <label for="fdRate">Rate per route £ <span class="opt">(blank = depot rate)</span><input type="number" id="fdRate" min="0" step="0.01" inputmode="decimal"></label>
+        <label for="fdWages">Driver wages £ per 4 weeks<input type="number" id="fdWages" min="0" step="0.01" inputmode="decimal" placeholder="0.00"></label>
         <label for="fdVan">Van hire £ per 4 weeks<input type="number" id="fdVan" min="0" step="0.01" inputmode="decimal" placeholder="0.00"></label>
         <label for="fdIns">Insurance £ per 4 weeks<input type="number" id="fdIns" min="0" step="0.01" inputmode="decimal" placeholder="0.00"></label>
         <label class="check" for="fdActive"><input type="checkbox" id="fdActive" checked> Active</label>
@@ -333,9 +334,10 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
   const DAY = 864e5;
   const DEPOTS = ["RAUNDS", "GLENFIELD"];
   const DEPOT_NAME = { RAUNDS: "Raunds", GLENFIELD: "Glenfield" };
-  const COSTS = [["charging", "Charging"], ["vanHire", "Van hire"], ["insurance", "Insurance"], ["damages", "Van damages"], ["extraPay", "Extra payments"]];
-  // Van hire and insurance are 4-weekly per FD, not entered per day.
-  const ENTRY_COSTS = COSTS.filter(([k]) => k !== "vanHire" && k !== "insurance");
+  const COSTS = [["wages", "Driver wages"], ["charging", "Charging"], ["vanHire", "Van hire"], ["insurance", "Insurance"], ["damages", "Van damages"], ["extraPay", "Extra payments"]];
+  // Driver wages, van hire and insurance are 4-weekly per FD, not entered per day.
+  const PERIOD_KEYS = ["wages", "vanHire", "insurance"];
+  const ENTRY_COSTS = COSTS.filter(([k]) => !PERIOD_KEYS.includes(k));
   const $ = (id) => document.getElementById(id);
 
   // ---------- dates and money ----------
@@ -364,7 +366,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
     pc: [], pcTab: [], pcTabLoaded: false, pcEnt: [],
     db: null, dl: null, canWrite: true, offline: false,
   };
-  const ui = { tab: "dashboard", view: "week", date: todayS(), scope: "ALL", dayDate: todayS(), dayDepot: "ALL", dayDirty: false, entScope: "ALL", editingFd: null, pcDate: todayS(), pcDirty: false };
+  const ui = { tab: "dashboard", view: "period", date: todayS(), scope: "ALL", dayDate: todayS(), dayDepot: "ALL", dayDirty: false, entScope: "ALL", editingFd: null, pcDate: todayS(), pcDirty: false };
   try { const v = localStorage.getItem("pnl-view"); if (v === "day" || v === "week" || v === "period") ui.view = v; } catch (_) {}
 
   const fdById = (id) => S.fds.find((f) => f.id === id);
@@ -422,18 +424,18 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
     const out = [];
     for (const f of S.fds) {
       const s = byFd.get(f.id);
-      if (s) out.push({ fdId: f.id, depot: s.depot || f.depot, vanHire: num(s.vanHire), insurance: num(s.insurance), saved: true, docId: s.id });
-      else if (f.active !== false || worked.has(f.id)) out.push({ fdId: f.id, depot: f.depot, vanHire: num(f.vanHire), insurance: num(f.insurance), saved: false });
+      if (s) out.push({ fdId: f.id, depot: s.depot || f.depot, wages: num(s.wages), vanHire: num(s.vanHire), insurance: num(s.insurance), saved: true, docId: s.id });
+      else if (f.active !== false || worked.has(f.id)) out.push({ fdId: f.id, depot: f.depot, wages: num(f.wages), vanHire: num(f.vanHire), insurance: num(f.insurance), saved: false });
     }
-    for (const [id, s] of byFd) if (!fdById(id)) out.push({ fdId: id, depot: s.depot, vanHire: num(s.vanHire), insurance: num(s.insurance), saved: true, docId: s.id });
+    for (const [id, s] of byFd) if (!fdById(id)) out.push({ fdId: id, depot: s.depot, wages: num(s.wages), vanHire: num(s.vanHire), insurance: num(s.insurance), saved: true, docId: s.id });
     return out;
   }
   // Spread each period charge evenly over its 28 days, so day and week views carry their share.
   function chargeRows(pStart, charges) {
     const rows = [];
     for (const c of charges) {
-      if (!c.vanHire && !c.insurance) continue;
-      for (let i = 0; i < 28; i++) rows.push({ charge: true, date: addDays(pStart, i), fdId: c.fdId, depot: c.depot, routes: 0, vanHire: c.vanHire / 28, insurance: c.insurance / 28 });
+      if (!c.wages && !c.vanHire && !c.insurance) continue;
+      for (let i = 0; i < 28; i++) rows.push({ charge: true, date: addDays(pStart, i), fdId: c.fdId, depot: c.depot, routes: 0, wages: c.wages / 28, vanHire: c.vanHire / 28, insurance: c.insurance / 28 });
     }
     return rows;
   }
@@ -452,7 +454,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
     return f ? f.code : "FD";
   }
 
-  const HEAD = `<th>Routes</th><th>Route revenue</th><th>Extra income</th><th>Total revenue</th><th>Rev / route</th><th>Charging</th><th>Van hire</th><th>Insurance</th><th>Damages</th><th>Extra payments</th><th>Total costs</th><th>Profit</th><th>Profit / route</th><th>Margin</th>`;
+  const HEAD = `<th>Routes</th><th>Route revenue</th><th>Extra income</th><th>Total revenue</th><th>Rev / route</th><th>Driver wages</th><th>Charging</th><th>Van hire</th><th>Insurance</th><th>Damages</th><th>Extra payments</th><th>Total costs</th><th>Profit</th><th>Profit / route</th><th>Margin</th>`;
   const signCls = (v) => (v > 0.004 ? "pos" : v < -0.004 ? "neg" : "");
   const cells = (t) => `<td>${t.routes}</td><td>${money(t.routeRevenue)}</td><td>${money(t.extraIncome)}</td><td>${money(t.revenue)}</td><td>${money(t.rpr)}</td>` +
     COSTS.map(([k]) => `<td>${money(t[k])}</td>`).join("") +
@@ -491,7 +493,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
     $("dashEmpty").hidden = !noFds;
     if (noFds) $("dashEmpty").innerHTML = `<div class="block empty"><h3>Set up your FDs to start</h3><ol>
       <li>Open <b>FDs &amp; rates</b> and enter each depot's revenue per route and the first day of a 4-week period.</li>
-      <li>Add each FD with its email address, depot, and 4-weekly van hire and insurance.</li>
+      <li>Add each FD with its email address, depot, and 4-weekly driver wages, van hire and insurance.</li>
       <li>Use <b>Daily entry</b> each day for routes, charging, damages and extras.</li></ol></div>`;
 
     const inRange = dashRows().filter((e) => e.date >= a && e.date <= b);
@@ -503,9 +505,9 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
       tile("", "Total revenue", money(t.revenue), `Routes ${money(t.routeRevenue)} + extra ${money(t.extraIncome)}`),
       tile("", "Routes completed", t.routes.toLocaleString("en-GB"), `${t.days} working day${t.days === 1 ? "" : "s"}`),
       tile("", "Revenue per route", money(t.rpr), "Including extra income"),
-      tile("", "Extra income", money(t.extraIncome), ""),
       tile("", "Profit per route", money(t.ppr), `Costs ${money(t.cpr)} per route`),
       tile("cost", "Total costs", money(t.costs), ""),
+      tile("cost", "Driver wages", money(t.wages), ui.view === "period" ? "4-weekly charge" : `Share of 4-weekly charge (${ui.view === "day" ? "1" : "7"}/28)`),
       tile("cost", "Charging", money(t.charging), ""),
       tile("cost", "Van hire", money(t.vanHire), ui.view === "period" ? "4-weekly charge" : `Share of 4-weekly charge (${ui.view === "day" ? "1" : "7"}/28)`),
       tile("cost", "Insurance", money(t.insurance), ui.view === "period" ? "4-weekly charge" : `Share of 4-weekly charge (${ui.view === "day" ? "1" : "7"}/28)`),
@@ -529,7 +531,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
       (fds.length ? fds.map((f) => {
         const ft = agg(inRange.filter((e) => e.fdId === f.id && dFilter(e)));
         return `<tr class="click${ui.scope === "F:" + f.id ? " sel" : ""}${ft.count ? "" : " dim"}" data-scope="F:${esc(f.id)}">${fdCell(f.id)}<td class="l">${f.depot ? chip(f.depot) : ""}</td>${cells(ft)}</tr>`;
-      }).join("") : `<tr><td class="l" colspan="16">No FDs yet. Add them under FDs &amp; rates.</td></tr>`) +
+      }).join("") : `<tr><td class="l" colspan="17">No FDs yet. Add them under FDs &amp; rates.</td></tr>`) +
       `</tbody>` + (fds.length ? `<tfoot><tr><td class="l">Total</td><td></td>${cells(agg(inRange.filter(dFilter)))}</tr></tfoot>` : "");
 
     // weeks (period view)
@@ -547,13 +549,13 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
     // day breakdown
     if (ui.view === "day") {
       $("timeTitle").textContent = "FDs on this day";
-      $("timeMeta").textContent = "Van hire and insurance show 1/28 of the 4-weekly charge.";
+      $("timeMeta").textContent = "Driver wages, van hire and insurance show 1/28 of the 4-weekly charge.";
       const seen = new Set();
       const one = scoped.slice().sort((x, y) => (x.charge ? 1 : 0) - (y.charge ? 1 : 0)).filter((e) => { const k = e.fdId + "|" + e.depot; if (seen.has(k)) return false; seen.add(k); return true; });
       const rows = one.sort((x, y) => x.depot.localeCompare(y.depot) || fdCode(x.fdId).localeCompare(fdCode(y.fdId), undefined, { numeric: true }));
       $("timeTable").innerHTML = `<thead><tr><th class="l">FD and email</th><th class="l">Depot</th>${HEAD}<th class="l">Notes</th></tr></thead><tbody>` +
         (rows.length ? rows.map((e) => `<tr>${fdCell(e.fdId)}<td class="l">${chip(e.depot)}</td>${cells(agg(scoped.filter((x) => x.fdId === e.fdId && x.depot === e.depot)))}<td class="wrapcell">${esc(e.notes || "")}</td></tr>`).join("")
-          : `<tr><td class="l" colspan="17">${loading ? "Loading…" : "Nothing entered for this day yet. Use Daily entry to add it."}</td></tr>`) +
+          : `<tr><td class="l" colspan="18">${loading ? "Loading…" : "Nothing entered for this day yet. Use Daily entry to add it."}</td></tr>`) +
         `</tbody>` + (rows.length ? `<tfoot><tr><td class="l">Total</td><td></td>${cells(t)}<td></td></tr></tfoot>` : "");
     } else {
       $("timeTitle").textContent = "Day by day";
@@ -657,7 +659,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
     ui.entScope = fillScope($("entScope"), ui.entScope);
     $("entExport").hidden = !S.dl;
     const list = filteredEntries();
-    const head = `<thead><tr><th class="l">Date</th><th class="l">FD and email</th><th class="l">Depot</th><th>Routes</th><th>Rate</th><th>Route revenue</th><th>Extra income</th><th>Charging</th><th>Damages</th><th>Extra payments</th><th>Profit before van &amp; insurance</th><th class="l">Notes</th><th></th></tr></thead>`;
+    const head = `<thead><tr><th class="l">Date</th><th class="l">FD and email</th><th class="l">Depot</th><th>Routes</th><th>Rate</th><th>Route revenue</th><th>Extra income</th><th>Charging</th><th>Damages</th><th>Extra payments</th><th>Profit before wages, van &amp; insurance</th><th class="l">Notes</th><th></th></tr></thead>`;
     const body = list.map((e) => {
       const t = agg([e]);
       return `<tr><td class="l">${esc(dayD(e.date))}</td>${fdCell(e.fdId)}<td class="l">${chip(e.depot)}</td><td>${e.routes}</td><td>${money(e.rate)}</td><td>${money(t.routeRevenue)}</td><td>${money(t.extraIncome)}</td>` +
@@ -680,27 +682,27 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
     const p = periodInfo(ui.pcDate);
     $("pcTitle").textContent = `Period ${p.no} · ${shortD(p.start)} – ${fmt(addDays(p.start, 27), { day: "numeric", month: "short", year: "numeric" })}`;
     if (ui.pcDirty && !force) { updatePcTotals(); return; }
-    const head = `<thead><tr><th class="l">FD and email</th><th class="l">Depot</th><th>Van hire £</th><th>Insurance £</th><th>Total</th><th class="l">Source</th><th></th></tr></thead>`;
-    if (!S.fdsLoaded || (S.db && !S.pcTabLoaded)) { $("pcTable").innerHTML = head + `<tbody><tr><td class="l" colspan="7">Loading…</td></tr></tbody>`; updatePcTotals(); return; }
+    const head = `<thead><tr><th class="l">FD and email</th><th class="l">Depot</th><th>Driver wages £</th><th>Van hire £</th><th>Insurance £</th><th>Total</th><th class="l">Source</th><th></th></tr></thead>`;
+    if (!S.fdsLoaded || (S.db && !S.pcTabLoaded)) { $("pcTable").innerHTML = head + `<tbody><tr><td class="l" colspan="8">Loading…</td></tr></tbody>`; updatePcTotals(); return; }
     const rows = pcRows();
     const inp = (c, k) => `<input type="number" min="0" step="0.01" inputmode="decimal" style="width:110px;text-align:right" id="pc-${esc(c.fdId)}-${k}" data-k="${k}" value="${c[k] || c[k] === 0 ? c[k] : ""}"${S.canWrite ? "" : " disabled"}>`;
     $("pcTable").innerHTML = head + `<tbody>` + (rows.length ? rows.map((c) => `<tr data-fd="${esc(c.fdId)}" data-depot="${esc(c.depot)}">${fdCell(c.fdId)}<td class="l">${chip(c.depot)}</td>
-        <td>${inp(c, "vanHire")}</td><td>${inp(c, "insurance")}</td><td class="pctot">${money(c.vanHire + c.insurance)}</td>
+        <td>${inp(c, "wages")}</td><td>${inp(c, "vanHire")}</td><td>${inp(c, "insurance")}</td><td class="pctot">${money(c.wages + c.vanHire + c.insurance)}</td>
         <td class="l">${c.saved ? "Saved for this period" : `<span class="email">FD's usual amount</span>`}</td>
         <td>${c.saved && S.canWrite ? `<button type="button" class="mini" data-pcreset="${esc(c.docId)}">Use usual amount</button>` : ""}</td></tr>`).join("")
-      : `<tr><td class="l" colspan="7">No active FDs. Add FDs under FDs &amp; rates.</td></tr>`) + `</tbody>`;
+      : `<tr><td class="l" colspan="8">No active FDs. Add FDs under FDs &amp; rates.</td></tr>`) + `</tbody>`;
     updatePcTotals();
   }
   function readPc() {
     return [...document.querySelectorAll("#pcTable tbody tr[data-fd]")].map((tr) => ({
       fdId: tr.dataset.fd, depot: tr.dataset.depot,
-      vanHire: num(tr.querySelector('[data-k="vanHire"]').value), insurance: num(tr.querySelector('[data-k="insurance"]').value),
+      wages: num(tr.querySelector('[data-k="wages"]').value), vanHire: num(tr.querySelector('[data-k="vanHire"]').value), insurance: num(tr.querySelector('[data-k="insurance"]').value),
     }));
   }
   function updatePcTotals() {
     const rows = readPc();
-    document.querySelectorAll("#pcTable tbody tr[data-fd]").forEach((tr, i) => { tr.querySelector(".pctot").textContent = money(rows[i].vanHire + rows[i].insurance); });
-    const sum = (d) => rows.filter((r) => !d || r.depot === d).reduce((s, r) => s + r.vanHire + r.insurance, 0);
+    document.querySelectorAll("#pcTable tbody tr[data-fd]").forEach((tr, i) => { tr.querySelector(".pctot").textContent = money(rows[i].wages + rows[i].vanHire + rows[i].insurance); });
+    const sum = (d) => rows.filter((r) => !d || r.depot === d).reduce((s, r) => s + r.wages + r.vanHire + r.insurance, 0);
     $("pcTotals").innerHTML = `Raunds <b>${money(sum("RAUNDS"))}</b> · Glenfield <b>${money(sum("GLENFIELD"))}</b> · Total <b>${money(sum())}</b> <span class="email">(${money(sum() / 4)} a week)</span>`;
     $("savePc").disabled = !S.canWrite || !rows.length;
   }
@@ -713,7 +715,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
     try {
       await Promise.all(rows.map((r) => S.db.collection("periodCharges").doc(`${pStart}_${r.fdId}`).set({ periodStart: pStart, ...r, savedAt: new Date().toISOString() })));
       ui.pcDirty = false;
-      setMsg(msg, `Saved van hire and insurance for the period starting ${shortD(pStart)}.`, "ok");
+      setMsg(msg, `Saved wages, van hire and insurance for the period starting ${shortD(pStart)}.`, "ok");
       renderCharges(true);
     } catch (err) { setMsg(msg, writeErr(err), "err"); }
     finally { updatePcTotals(); }
@@ -722,14 +724,14 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
   // ============ SETTINGS ============
   function renderSettings() {
     const fds = sortFds(S.fds);
-    $("fdList").innerHTML = `<thead><tr><th class="l">FD</th><th class="l">Email</th><th class="l">Depot</th><th class="l">Driver</th><th>Rate / route</th><th>Van hire / 4 wks</th><th>Insurance / 4 wks</th><th class="l">Status</th><th></th></tr></thead><tbody>` +
+    $("fdList").innerHTML = `<thead><tr><th class="l">FD</th><th class="l">Email</th><th class="l">Depot</th><th class="l">Driver</th><th>Rate / route</th><th>Wages / 4 wks</th><th>Van hire / 4 wks</th><th>Insurance / 4 wks</th><th class="l">Status</th><th></th></tr></thead><tbody>` +
       (fds.length ? fds.map((f) => {
         const own = f.rate !== "" && f.rate != null;
         return `<tr><td class="l fdname">${esc(f.code)}</td><td class="l">${esc(f.email)}</td><td class="l">${chip(f.depot)}</td><td class="l">${esc(f.driver || "")}</td>
-          <td>${own ? money(f.rate) : `<span class="email">${money(rateFor(f))} depot</span>`}</td><td>${money(f.vanHire)}</td><td>${money(f.insurance)}</td>
+          <td>${own ? money(f.rate) : `<span class="email">${money(rateFor(f))} depot</span>`}</td><td>${money(f.wages)}</td><td>${money(f.vanHire)}</td><td>${money(f.insurance)}</td>
           <td class="l">${f.active === false ? `<span class="chip off">Inactive</span>` : "Active"}</td>
           <td>${S.canWrite ? `<div class="rowbtns"><button type="button" class="mini" data-fdedit="${esc(f.id)}">Edit</button><button type="button" class="mini" data-fddel="${esc(f.id)}">Delete</button></div>` : ""}</td></tr>`;
-      }).join("") : `<tr><td class="l" colspan="9">${S.db && !S.fdsLoaded ? "Loading…" : "No FDs yet. Add your first one below."}</td></tr>`) + `</tbody>`;
+      }).join("") : `<tr><td class="l" colspan="10">${S.db && !S.fdsLoaded ? "Loading…" : "No FDs yet. Add your first one below."}</td></tr>`) + `</tbody>`;
   }
   function fillSettingsForm() {
     $("rateRAUNDS").value = S.settings.depotRates.RAUNDS || "";
@@ -744,7 +746,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
     const f = fdById(id); if (!f) return;
     ui.editingFd = id;
     $("fdCode").value = f.code; $("fdEmail").value = f.email; $("fdDepot").value = f.depot; $("fdDriver").value = f.driver || "";
-    $("fdRate").value = f.rate === "" || f.rate == null ? "" : f.rate; $("fdVan").value = f.vanHire || ""; $("fdIns").value = f.insurance || "";
+    $("fdRate").value = f.rate === "" || f.rate == null ? "" : f.rate; $("fdWages").value = f.wages || ""; $("fdVan").value = f.vanHire || ""; $("fdIns").value = f.insurance || "";
     $("fdActive").checked = f.active !== false;
     $("fdFormTitle").textContent = `Edit ${f.code}`; $("fdSubmit").textContent = "Save FD"; $("fdCancel").hidden = false;
     setMsg($("fdMsg"), "");
@@ -766,7 +768,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
     $("fdSubmit").dataset.dup = "";
     const doc = {
       code, email, depot: $("fdDepot").value, driver: $("fdDriver").value.trim(),
-      rate: $("fdRate").value === "" ? "" : num($("fdRate").value), vanHire: num($("fdVan").value), insurance: num($("fdIns").value),
+      rate: $("fdRate").value === "" ? "" : num($("fdRate").value), wages: num($("fdWages").value), vanHire: num($("fdVan").value), insurance: num($("fdIns").value),
       active: $("fdActive").checked,
     };
     $("fdSubmit").disabled = true;
@@ -816,8 +818,8 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
     try { await S.dl.save({ filename, data: "﻿" + rows.map((r) => r.map(cell).join(",")).join("\r\n") }); setMsg(msgEl, "Report ready.", "ok"); }
     catch (err) { if (err && err.code !== "declined") setMsg(msgEl, "Couldn't create the file. Try again.", "err"); }
   }
-  const CSV_HEAD = ["Routes", "Route revenue", "Extra income", "Total revenue", "Revenue per route", "Charging", "Van hire", "Insurance", "Van damages", "Extra payments", "Total costs", "Profit", "Profit per route", "Margin %"];
-  const csvRow = (t) => [t.routes, ...[t.routeRevenue, t.extraIncome, t.revenue, t.rpr, t.charging, t.vanHire, t.insurance, t.damages, t.extraPay, t.costs, t.profit, t.ppr].map((v) => v.toFixed(2)), Number.isFinite(t.margin) ? (t.margin * 100).toFixed(1) : ""];
+  const CSV_HEAD = ["Routes", "Route revenue", "Extra income", "Total revenue", "Revenue per route", "Driver wages", "Charging", "Van hire", "Insurance", "Van damages", "Extra payments", "Total costs", "Profit", "Profit per route", "Margin %"];
+  const csvRow = (t) => [t.routes, ...[t.routeRevenue, t.extraIncome, t.revenue, t.rpr, t.wages, t.charging, t.vanHire, t.insurance, t.damages, t.extraPay, t.costs, t.profit, t.ppr].map((v) => v.toFixed(2)), Number.isFinite(t.margin) ? (t.margin * 100).toFixed(1) : ""];
   function exportReport() {
     const [a, b] = rangeFor(ui.view, ui.date);
     const inRange = dashRows().filter((e) => e.date >= a && e.date <= b);
@@ -831,7 +833,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
     saveCsv(rows, `dpd-pnl-${ui.view}-${a}.csv`, $("dashMsg"));
   }
   function exportEntries() {
-    const rows = [["Date", "Period", "Week", "Depot", "FD", "Email", "Routes", "Rate per route", "Route revenue", "Extra income", "Charging", "Van damages", "Extra payments", "Day costs", "Profit before van hire and insurance", "Notes"]];
+    const rows = [["Date", "Period", "Week", "Depot", "FD", "Email", "Routes", "Rate per route", "Route revenue", "Extra income", "Charging", "Van damages", "Extra payments", "Day costs", "Profit before wages, van hire and insurance", "Notes"]];
     filteredEntries().reverse().forEach((e) => {
       const p = periodInfo(e.date), t = agg([e]);
       rows.push([e.date, p.no, p.week, DEPOT_NAME[e.depot], fdCode(e.fdId), fdEmail(e.fdId), e.routes, e.rate, t.routeRevenue.toFixed(2), num(e.extraIncome), e.charging, e.damages, num(e.extraPay), t.costs.toFixed(2), t.profit.toFixed(2), e.notes || ""]);
