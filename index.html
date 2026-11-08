@@ -1,0 +1,164 @@
+<!doctype html>
+<html lang="en-GB">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>DPD P&amp;L Tracker</title>
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <header class="topbar">
+    <div class="brand">
+      <span class="logo">£</span>
+      <div>
+        <h1>DPD P&amp;L Tracker</h1>
+        <p class="sub">Raunds &amp; Glenfield · revenue, costs, routes</p>
+      </div>
+    </div>
+    <nav class="tabs" role="tablist">
+      <button class="tab active" data-tab="dashboard">Dashboard</button>
+      <button class="tab" data-tab="daily">Daily entry</button>
+      <button class="tab" data-tab="entries">All entries</button>
+      <button class="tab" data-tab="settings">FDs &amp; settings</button>
+    </nav>
+  </header>
+
+  <main>
+    <!-- DASHBOARD -->
+    <section id="tab-dashboard" class="panel active">
+      <div class="controls card">
+        <div class="seg" id="viewSeg" role="group" aria-label="Time view">
+          <button data-view="day">Daily</button>
+          <button data-view="week" class="on">Weekly</button>
+          <button data-view="period">4-week period</button>
+        </div>
+        <div class="datenav">
+          <button class="icon" id="prevBtn" aria-label="Previous">‹</button>
+          <input type="date" id="dashDate">
+          <button class="icon" id="nextBtn" aria-label="Next">›</button>
+          <button class="ghost" id="todayBtn">Today</button>
+        </div>
+        <label class="scope">
+          <span>Showing</span>
+          <select id="scopeSel"></select>
+        </label>
+      </div>
+
+      <div class="rangeline">
+        <h2 id="rangeTitle"></h2>
+        <div class="actions">
+          <button class="ghost" id="exportReportBtn">Export report CSV</button>
+          <button class="ghost" id="printBtn">Print</button>
+        </div>
+      </div>
+
+      <div class="kpis" id="kpis"></div>
+
+      <div class="card">
+        <h3>Depots — separate &amp; combined</h3>
+        <div class="tablewrap"><table id="depotTable"></table></div>
+      </div>
+
+      <div class="card">
+        <h3 id="fdTableTitle">FD breakdown</h3>
+        <p class="hint">Tap an FD to open its individual report.</p>
+        <div class="tablewrap"><table id="fdTable"></table></div>
+      </div>
+
+      <div class="card" id="timeCard">
+        <h3 id="timeTitle">Breakdown</h3>
+        <div class="tablewrap"><table id="timeTable"></table></div>
+        <div id="timeTable2Wrap" class="tablewrap" style="margin-top:16px"><table id="timeTable2"></table></div>
+      </div>
+    </section>
+
+    <!-- DAILY ENTRY -->
+    <section id="tab-daily" class="panel">
+      <div class="card controls">
+        <label><span>Date</span><input type="date" id="dayDate"></label>
+        <label><span>Depot</span>
+          <select id="dayDepot">
+            <option value="ALL">Both depots</option>
+            <option value="RAUNDS">Raunds</option>
+            <option value="GLENFIELD">Glenfield</option>
+          </select>
+        </label>
+        <div class="datenav">
+          <button class="icon" id="dayPrev" aria-label="Previous day">‹</button>
+          <button class="icon" id="dayNext" aria-label="Next day">›</button>
+        </div>
+      </div>
+      <p class="hint">Enter each FD's day. Revenue = routes × rate per route. Van hire &amp; insurance fill in from the FD's daily defaults when you type routes (you can overwrite them). Leave a card blank to skip that FD.</p>
+      <div id="dayEmpty" class="empty card" hidden>No FDs yet — add your FDs in <a href="#" data-goto="settings">FDs &amp; settings</a> first.</div>
+      <div id="dayCards" class="daycards"></div>
+      <div class="savebar">
+        <div id="dayTotals"></div>
+        <button class="primary" id="saveDay">Save day</button>
+      </div>
+    </section>
+
+    <!-- ENTRIES -->
+    <section id="tab-entries" class="panel">
+      <div class="card controls">
+        <label><span>From</span><input type="date" id="entFrom"></label>
+        <label><span>To</span><input type="date" id="entTo"></label>
+        <label class="scope"><span>Showing</span><select id="entScope"></select></label>
+        <button class="ghost" id="entExport">Export CSV</button>
+      </div>
+      <div class="card">
+        <div class="tablewrap"><table id="entTable"></table></div>
+      </div>
+    </section>
+
+    <!-- SETTINGS -->
+    <section id="tab-settings" class="panel">
+      <div class="card">
+        <h3>FDs</h3>
+        <p class="hint">Each FD is linked to an email address and a depot. Rate override, van hire and insurance are optional defaults used when entering a day.</p>
+        <div class="tablewrap"><table id="fdList"></table></div>
+        <form id="fdForm" class="grid-form">
+          <input type="hidden" id="fdId">
+          <label><span>FD number / name *</span><input id="fdCode" required placeholder="e.g. FD1234"></label>
+          <label><span>Email *</span><input id="fdEmail" type="email" required placeholder="driver@example.com"></label>
+          <label><span>Depot *</span>
+            <select id="fdDepot"><option value="RAUNDS">Raunds</option><option value="GLENFIELD">Glenfield</option></select>
+          </label>
+          <label><span>Driver name</span><input id="fdDriver" placeholder="optional"></label>
+          <label><span>Rate per route £ (override)</span><input id="fdRate" type="number" step="0.01" min="0" placeholder="uses depot rate"></label>
+          <label><span>Van hire £ / day</span><input id="fdVan" type="number" step="0.01" min="0" placeholder="0.00"></label>
+          <label><span>Insurance £ / day</span><input id="fdIns" type="number" step="0.01" min="0" placeholder="0.00"></label>
+          <label class="check"><input type="checkbox" id="fdActive" checked> Active</label>
+          <div class="form-actions">
+            <button type="submit" class="primary" id="fdSubmit">Add FD</button>
+            <button type="button" class="ghost" id="fdCancel" hidden>Cancel edit</button>
+          </div>
+        </form>
+      </div>
+
+      <div class="card">
+        <h3>Depot rates &amp; period</h3>
+        <form id="settingsForm" class="grid-form">
+          <label><span>Raunds revenue per route £</span><input id="rateRAUNDS" type="number" step="0.01" min="0"></label>
+          <label><span>Glenfield revenue per route £</span><input id="rateGLENFIELD" type="number" step="0.01" min="0"></label>
+          <label><span>Period 1 start date (week 1, day 1)</span><input id="periodAnchor" type="date" required></label>
+          <div class="form-actions"><button type="submit" class="primary">Save settings</button></div>
+        </form>
+        <p class="hint">Weeks and 4-week periods are counted from the period start date. Pick the first day of any of your DPD periods — the tracker rolls forward/back in 7- and 28-day steps from there.</p>
+      </div>
+
+      <div class="card">
+        <h3>Backup</h3>
+        <p class="hint">Data is saved in this browser only. Download a backup regularly and restore it on another device if needed.</p>
+        <div class="row-actions">
+          <button class="ghost" id="backupBtn">Download backup (.json)</button>
+          <label class="ghost filebtn">Restore backup<input type="file" id="restoreFile" accept=".json,application/json" hidden></label>
+          <button class="danger" id="resetBtn">Delete all data</button>
+        </div>
+      </div>
+    </section>
+  </main>
+
+  <div id="toast" class="toast" role="status" aria-live="polite"></div>
+  <script src="app.js"></script>
+</body>
+</html>
