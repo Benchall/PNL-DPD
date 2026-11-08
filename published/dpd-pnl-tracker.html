@@ -96,7 +96,7 @@ input:focus-visible, select:focus-visible, button:focus-visible { outline: 2px s
 .rangeline h2 { font-size: 24px; }
 .rangeline h2 small { font-family: var(--font-body); font-size: 14px; font-weight: 500; color: var(--muted); letter-spacing: 0; }
 
-.tiles { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 10px; }
+.tiles { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; }
 .tile { background: var(--surface); border: 1px solid var(--line); border-radius: var(--radius); padding: 12px 14px; display: grid; gap: 2px; align-content: start; }
 .tile b { font-family: var(--font-display); font-size: 26px; font-weight: 600; }
 .tile small { color: var(--muted); font-size: 12px; }
@@ -150,7 +150,6 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
 @media (max-width: 1000px) { .tiles { grid-template-columns: repeat(3, minmax(0, 1fr)); } }
 @media (max-width: 560px) {
   .tiles { grid-template-columns: repeat(2, minmax(0, 1fr)); }
-  .tile.profit { grid-column: 1 / -1; }
   .daycard .fields { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .top h1 { font-size: 22px; }
   .seg button { padding: 8px 9px; }
@@ -239,7 +238,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
           <option value="GLENFIELD">Glenfield</option>
         </select>
       </label>
-      <p class="note grow">Revenue is routes × rate per route. Van hire and insurance fill in from the FD's daily amounts when you type routes. Leave a card blank to skip that FD. Clearing a saved card removes it.</p>
+      <p class="note grow">Revenue is routes × rate per route, plus any extra income. Extra payments you make count as a cost. Van hire and insurance fill in from the FD's daily amounts when you type routes. Leave a card blank to skip that FD. Clearing a saved card removes it.</p>
     </div>
     <div id="dayCards" class="daycards"></div>
     <div class="savebar">
@@ -313,7 +312,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
   const DAY = 864e5;
   const DEPOTS = ["RAUNDS", "GLENFIELD"];
   const DEPOT_NAME = { RAUNDS: "Raunds", GLENFIELD: "Glenfield" };
-  const COSTS = [["charging", "Charging"], ["vanHire", "Van hire"], ["insurance", "Insurance"], ["damages", "Van damages"]];
+  const COSTS = [["charging", "Charging"], ["vanHire", "Van hire"], ["insurance", "Insurance"], ["damages", "Van damages"], ["extraPay", "Extra payments"]];
   const $ = (id) => document.getElementById(id);
 
   // ---------- dates and money ----------
@@ -368,15 +367,18 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
 
   // ---------- maths ----------
   function agg(list) {
-    const t = { routes: 0, revenue: 0, charging: 0, vanHire: 0, insurance: 0, damages: 0, count: list.length };
+    const t = { routes: 0, routeRevenue: 0, extraIncome: 0, count: list.length };
+    for (const [k] of COSTS) t[k] = 0;
     const days = new Set();
     for (const e of list) {
       t.routes += num(e.routes);
-      t.revenue += num(e.routes) * num(e.rate);
+      t.routeRevenue += num(e.routes) * num(e.rate);
+      t.extraIncome += num(e.extraIncome);
       for (const [k] of COSTS) t[k] += num(e[k]);
       if (num(e.routes) > 0) days.add(e.date);
     }
-    t.costs = t.charging + t.vanHire + t.insurance + t.damages;
+    t.revenue = t.routeRevenue + t.extraIncome;
+    t.costs = COSTS.reduce((s, [k]) => s + t[k], 0);
     t.profit = t.revenue - t.costs;
     t.rpr = t.routes ? t.revenue / t.routes : 0;
     t.cpr = t.routes ? t.costs / t.routes : 0;
@@ -395,9 +397,9 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
     return f ? f.code : "FD";
   }
 
-  const HEAD = `<th>Routes</th><th>Revenue</th><th>Rev / route</th><th>Charging</th><th>Van hire</th><th>Insurance</th><th>Damages</th><th>Total costs</th><th>Profit</th><th>Profit / route</th><th>Margin</th>`;
+  const HEAD = `<th>Routes</th><th>Route revenue</th><th>Extra income</th><th>Total revenue</th><th>Rev / route</th><th>Charging</th><th>Van hire</th><th>Insurance</th><th>Damages</th><th>Extra payments</th><th>Total costs</th><th>Profit</th><th>Profit / route</th><th>Margin</th>`;
   const signCls = (v) => (v > 0.004 ? "pos" : v < -0.004 ? "neg" : "");
-  const cells = (t) => `<td>${t.routes}</td><td>${money(t.revenue)}</td><td>${money(t.rpr)}</td>` +
+  const cells = (t) => `<td>${t.routes}</td><td>${money(t.routeRevenue)}</td><td>${money(t.extraIncome)}</td><td>${money(t.revenue)}</td><td>${money(t.rpr)}</td>` +
     COSTS.map(([k]) => `<td>${money(t[k])}</td>`).join("") +
     `<td>${money(t.costs)}</td><td class="${signCls(t.profit)}">${money(t.profit)}</td><td class="${signCls(t.ppr)}">${money(t.ppr)}</td><td>${pct(t.margin)}</td>`;
   const fdCell = (id) => `<td class="l"><div class="fdname">${esc(fdCode(id))}</div><div class="email">${esc(fdEmail(id))}</div></td>`;
@@ -443,15 +445,17 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
     const tile = (cls, label, val, note) => `<div class="tile ${cls}"><span class="eyebrow">${label}</span><b>${loading ? "…" : val}</b>${note ? `<small>${note}</small>` : ""}</div>`;
     $("kpis").innerHTML = [
       tile("profit", "Profit", money(t.profit), `Margin ${pct(t.margin)}`),
-      tile("", "Revenue", money(t.revenue), `${money(t.rpr)} per route`),
+      tile("", "Total revenue", money(t.revenue), `Routes ${money(t.routeRevenue)} + extra ${money(t.extraIncome)}`),
       tile("", "Routes completed", t.routes.toLocaleString("en-GB"), `${t.days} working day${t.days === 1 ? "" : "s"}`),
+      tile("", "Revenue per route", money(t.rpr), "Including extra income"),
+      tile("", "Extra income", money(t.extraIncome), ""),
       tile("", "Profit per route", money(t.ppr), `Costs ${money(t.cpr)} per route`),
       tile("cost", "Total costs", money(t.costs), ""),
       tile("cost", "Charging", money(t.charging), ""),
       tile("cost", "Van hire", money(t.vanHire), ""),
       tile("cost", "Insurance", money(t.insurance), ""),
       tile("cost", "Van damages", money(t.damages), ""),
-      tile("", "Revenue per route", money(t.rpr), ""),
+      tile("cost", "Extra payments", money(t.extraPay), ""),
     ].join("");
 
     // depots
@@ -470,7 +474,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
       (fds.length ? fds.map((f) => {
         const ft = agg(inRange.filter((e) => e.fdId === f.id && dFilter(e)));
         return `<tr class="click${ui.scope === "F:" + f.id ? " sel" : ""}${ft.count ? "" : " dim"}" data-scope="F:${esc(f.id)}">${fdCell(f.id)}<td class="l">${f.depot ? chip(f.depot) : ""}</td>${cells(ft)}</tr>`;
-      }).join("") : `<tr><td class="l" colspan="13">No FDs yet. Add them under FDs &amp; rates.</td></tr>`) +
+      }).join("") : `<tr><td class="l" colspan="16">No FDs yet. Add them under FDs &amp; rates.</td></tr>`) +
       `</tbody>` + (fds.length ? `<tfoot><tr><td class="l">Total</td><td></td>${cells(agg(inRange.filter(dFilter)))}</tr></tfoot>` : "");
 
     // weeks (period view)
@@ -492,7 +496,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
       const rows = scoped.slice().sort((x, y) => x.depot.localeCompare(y.depot) || fdCode(x.fdId).localeCompare(fdCode(y.fdId), undefined, { numeric: true }));
       $("timeTable").innerHTML = `<thead><tr><th class="l">FD and email</th><th class="l">Depot</th>${HEAD}<th class="l">Notes</th></tr></thead><tbody>` +
         (rows.length ? rows.map((e) => `<tr>${fdCell(e.fdId)}<td class="l">${chip(e.depot)}</td>${cells(agg([e]))}<td class="wrapcell">${esc(e.notes || "")}</td></tr>`).join("")
-          : `<tr><td class="l" colspan="14">${loading ? "Loading…" : "Nothing entered for this day yet. Use Daily entry to add it."}</td></tr>`) +
+          : `<tr><td class="l" colspan="17">${loading ? "Loading…" : "Nothing entered for this day yet. Use Daily entry to add it."}</td></tr>`) +
         `</tbody>` + (rows.length ? `<tfoot><tr><td class="l">Total</td><td></td>${cells(t)}<td></td></tr></tfoot>` : "");
     } else {
       $("timeTitle").textContent = "Day by day";
@@ -507,7 +511,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
   }
 
   // ============ DAILY ENTRY ============
-  const FIELDS = ["routes", "rate", "charging", "vanHire", "insurance", "damages"];
+  const FIELDS = ["routes", "rate", "extraIncome", "charging", "vanHire", "insurance", "damages", "extraPay"];
   function renderDaily(force) {
     $("dayDate").value = ui.dayDate;
     $("dayDepot").value = ui.dayDepot;
@@ -529,6 +533,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
         <div class="fields">
           ${fld("routes", "Routes", "1")}${fld("rate", "Rate / route £", "0.01")}${fld("charging", "Charging £", "0.01")}
           ${fld("vanHire", "Van hire £", "0.01")}${fld("insurance", "Insurance £", "0.01")}${fld("damages", "Van damages £", "0.01")}
+          ${fld("extraIncome", "Extra income £", "0.01")}${fld("extraPay", "Extra payments £", "0.01")}
           <label class="wide">Notes <span class="opt">(optional)</span><input type="text" name="notes" id="d-${esc(f.id)}-notes" autocomplete="off" value="${esc(e.notes || "")}"></label>
         </div>
         <div class="calc"></div>
@@ -543,7 +548,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
     for (const k of FIELDS) d[k] = g(k);
     return d;
   }
-  const blank = (d) => ["routes", "charging", "vanHire", "insurance", "damages"].every((k) => num(d[k]) === 0) && !d.notes;
+  const blank = (d) => ["routes", "extraIncome", "charging", "vanHire", "insurance", "damages", "extraPay"].every((k) => num(d[k]) === 0) && !d.notes;
   function updateCard(card) {
     const d = readCard(card);
     const t = agg([d]);
@@ -571,6 +576,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
         date, fdId, depot: prev ? prev.depot : f.depot,
         routes: Math.max(0, Math.round(num(d.routes))), rate: num(d.rate),
         charging: num(d.charging), vanHire: num(d.vanHire), insurance: num(d.insurance), damages: num(d.damages),
+        extraIncome: num(d.extraIncome), extraPay: num(d.extraPay),
         notes: d.notes,
       };
       const same = prev && ["depot", ...FIELDS, "notes"].every((k) => (k === "notes" ? (prev.notes || "") === doc.notes : prev[k] === doc[k]));
@@ -595,17 +601,17 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
     ui.entScope = fillScope($("entScope"), ui.entScope);
     $("entExport").hidden = !S.dl;
     const list = filteredEntries();
-    const head = `<thead><tr><th class="l">Date</th><th class="l">FD and email</th><th class="l">Depot</th><th>Routes</th><th>Rate</th><th>Revenue</th><th>Charging</th><th>Van hire</th><th>Insurance</th><th>Damages</th><th>Profit</th><th class="l">Notes</th><th></th></tr></thead>`;
+    const head = `<thead><tr><th class="l">Date</th><th class="l">FD and email</th><th class="l">Depot</th><th>Routes</th><th>Rate</th><th>Route revenue</th><th>Extra income</th><th>Charging</th><th>Van hire</th><th>Insurance</th><th>Damages</th><th>Extra payments</th><th>Profit</th><th class="l">Notes</th><th></th></tr></thead>`;
     const body = list.map((e) => {
       const t = agg([e]);
-      return `<tr><td class="l">${esc(dayD(e.date))}</td>${fdCell(e.fdId)}<td class="l">${chip(e.depot)}</td><td>${e.routes}</td><td>${money(e.rate)}</td><td>${money(t.revenue)}</td>` +
+      return `<tr><td class="l">${esc(dayD(e.date))}</td>${fdCell(e.fdId)}<td class="l">${chip(e.depot)}</td><td>${e.routes}</td><td>${money(e.rate)}</td><td>${money(t.routeRevenue)}</td><td>${money(t.extraIncome)}</td>` +
         COSTS.map(([k]) => `<td>${money(e[k])}</td>`).join("") +
         `<td class="${signCls(t.profit)}">${money(t.profit)}</td><td class="wrapcell">${esc(e.notes || "")}</td>
         <td><div class="rowbtns"><button type="button" class="mini" data-edit="${esc(e.date)}">Edit day</button>${S.canWrite ? `<button type="button" class="mini" data-del="${esc(e.id)}">Delete</button>` : ""}</div></td></tr>`;
     }).join("");
     const t = agg(list);
-    $("entTable").innerHTML = head + `<tbody>${body || `<tr><td class="l" colspan="13">${S.db && !S.entLoaded ? "Loading…" : "No entries in these dates."}</td></tr>`}</tbody>` +
-      (list.length ? `<tfoot><tr><td class="l">Total</td><td class="l">${list.length} entries</td><td></td><td>${t.routes}</td><td>${money(t.rpr)}</td><td>${money(t.revenue)}</td>${COSTS.map(([k]) => `<td>${money(t[k])}</td>`).join("")}<td class="${signCls(t.profit)}">${money(t.profit)}</td><td></td><td></td></tr></tfoot>` : "");
+    $("entTable").innerHTML = head + `<tbody>${body || `<tr><td class="l" colspan="15">${S.db && !S.entLoaded ? "Loading…" : "No entries in these dates."}</td></tr>`}</tbody>` +
+      (list.length ? `<tfoot><tr><td class="l">Total</td><td class="l">${list.length} entries</td><td></td><td>${t.routes}</td><td></td><td>${money(t.routeRevenue)}</td><td>${money(t.extraIncome)}</td>${COSTS.map(([k]) => `<td>${money(t[k])}</td>`).join("")}<td class="${signCls(t.profit)}">${money(t.profit)}</td><td></td><td></td></tr></tfoot>` : "");
   }
 
   // ============ SETTINGS ============
@@ -705,8 +711,8 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
     try { await S.dl.save({ filename, data: "﻿" + rows.map((r) => r.map(cell).join(",")).join("\r\n") }); setMsg(msgEl, "Report ready.", "ok"); }
     catch (err) { if (err && err.code !== "declined") setMsg(msgEl, "Couldn't create the file. Try again.", "err"); }
   }
-  const CSV_HEAD = ["Routes", "Revenue", "Revenue per route", "Charging", "Van hire", "Insurance", "Van damages", "Total costs", "Profit", "Profit per route", "Margin %"];
-  const csvRow = (t) => [t.routes, ...[t.revenue, t.rpr, t.charging, t.vanHire, t.insurance, t.damages, t.costs, t.profit, t.ppr].map((v) => v.toFixed(2)), Number.isFinite(t.margin) ? (t.margin * 100).toFixed(1) : ""];
+  const CSV_HEAD = ["Routes", "Route revenue", "Extra income", "Total revenue", "Revenue per route", "Charging", "Van hire", "Insurance", "Van damages", "Extra payments", "Total costs", "Profit", "Profit per route", "Margin %"];
+  const csvRow = (t) => [t.routes, ...[t.routeRevenue, t.extraIncome, t.revenue, t.rpr, t.charging, t.vanHire, t.insurance, t.damages, t.extraPay, t.costs, t.profit, t.ppr].map((v) => v.toFixed(2)), Number.isFinite(t.margin) ? (t.margin * 100).toFixed(1) : ""];
   function exportReport() {
     const [a, b] = rangeFor(ui.view, ui.date);
     const inRange = S.dash.filter((e) => e.date >= a && e.date <= b);
@@ -720,10 +726,10 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
     saveCsv(rows, `dpd-pnl-${ui.view}-${a}.csv`, $("dashMsg"));
   }
   function exportEntries() {
-    const rows = [["Date", "Period", "Week", "Depot", "FD", "Email", "Routes", "Rate per route", "Revenue", "Charging", "Van hire", "Insurance", "Van damages", "Total costs", "Profit", "Notes"]];
+    const rows = [["Date", "Period", "Week", "Depot", "FD", "Email", "Routes", "Rate per route", "Route revenue", "Extra income", "Charging", "Van hire", "Insurance", "Van damages", "Extra payments", "Total costs", "Profit", "Notes"]];
     filteredEntries().reverse().forEach((e) => {
       const p = periodInfo(e.date), t = agg([e]);
-      rows.push([e.date, p.no, p.week, DEPOT_NAME[e.depot], fdCode(e.fdId), fdEmail(e.fdId), e.routes, e.rate, t.revenue.toFixed(2), e.charging, e.vanHire, e.insurance, e.damages, t.costs.toFixed(2), t.profit.toFixed(2), e.notes || ""]);
+      rows.push([e.date, p.no, p.week, DEPOT_NAME[e.depot], fdCode(e.fdId), fdEmail(e.fdId), e.routes, e.rate, t.routeRevenue.toFixed(2), num(e.extraIncome), e.charging, e.vanHire, e.insurance, e.damages, num(e.extraPay), t.costs.toFixed(2), t.profit.toFixed(2), e.notes || ""]);
     });
     saveCsv(rows, `dpd-entries-${$("entFrom").value}-to-${$("entTo").value}.csv`, $("entMsg"));
   }
