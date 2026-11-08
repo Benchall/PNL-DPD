@@ -165,6 +165,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
   <nav class="nav" role="tablist" aria-label="Sections">
     <button role="tab" type="button" data-tab="dashboard" aria-selected="true">Dashboard</button>
     <button role="tab" type="button" data-tab="daily" aria-selected="false">Daily entry</button>
+    <button role="tab" type="button" data-tab="charges" aria-selected="false">Van hire &amp; insurance</button>
     <button role="tab" type="button" data-tab="entries" aria-selected="false">All entries</button>
     <button role="tab" type="button" data-tab="settings" aria-selected="false">FDs &amp; rates</button>
   </nav>
@@ -238,7 +239,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
           <option value="GLENFIELD">Glenfield</option>
         </select>
       </label>
-      <p class="note grow">Revenue is routes × rate per route, plus any extra income. Extra payments you make count as a cost. Van hire and insurance fill in from the FD's daily amounts when you type routes. Leave a card blank to skip that FD. Clearing a saved card removes it.</p>
+      <p class="note grow">Revenue is routes × rate per route, plus any extra income. Extra payments you make count as a cost. Van hire and insurance are 4-weekly, so they're not entered here. Leave a card blank to skip that FD. Clearing a saved card removes it.</p>
     </div>
     <div id="dayCards" class="daycards"></div>
     <div class="savebar">
@@ -246,6 +247,26 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
       <div class="actions">
         <p class="msg" id="dayMsg" role="status"></p>
         <button class="btn primary" type="button" id="saveDay">Save day</button>
+      </div>
+    </div>
+  </section>
+
+  <!-- VAN HIRE & INSURANCE -->
+  <section class="panel" id="tab-charges" hidden>
+    <div class="card controls">
+      <div class="datenav">
+        <button class="iconbtn" type="button" id="pcPrev" aria-label="Previous period">‹</button>
+        <div><span class="eyebrow">4-week period</span><h2 id="pcTitle" style="font-size:21px">–</h2></div>
+        <button class="iconbtn" type="button" id="pcNext" aria-label="Next period">›</button>
+      </div>
+      <p class="note grow">Van hire and insurance are charged once per 4-week period, whatever the number of days worked. Each active FD is charged its usual 4-weekly amount (set under FDs &amp; rates). Change a figure here for just this period, then save. Saving also fixes this period's figures, so later changes to an FD's usual amount won't alter it.</p>
+    </div>
+    <article class="block"><div class="scroll"><table id="pcTable"></table></div></article>
+    <div class="savebar">
+      <div id="pcTotals" class="num">–</div>
+      <div class="actions">
+        <p class="msg" id="pcMsg" role="status"></p>
+        <button class="btn primary" type="button" id="savePc">Save this period</button>
       </div>
     </div>
   </section>
@@ -266,7 +287,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
   <section class="panel" id="tab-settings" hidden>
     <div class="card">
       <h2>FDs</h2>
-      <p class="note">Each FD is linked to an email address and a depot. Rate, van hire and insurance are filled in for you on the daily entry screen.</p>
+      <p class="note">Each FD is linked to an email address and a depot. The rate is filled in on the daily entry screen. Van hire and insurance are the usual 4-weekly amounts, charged automatically each period.</p>
     </div>
     <article class="block"><div class="scroll"><table id="fdList"></table></div></article>
 
@@ -278,8 +299,8 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
         <label for="fdDepot">Depot<select id="fdDepot"><option value="RAUNDS">Raunds</option><option value="GLENFIELD">Glenfield</option></select></label>
         <label for="fdDriver">Driver name <span class="opt">(optional)</span><input type="text" id="fdDriver" autocomplete="off"></label>
         <label for="fdRate">Rate per route £ <span class="opt">(blank = depot rate)</span><input type="number" id="fdRate" min="0" step="0.01" inputmode="decimal"></label>
-        <label for="fdVan">Van hire £ a day<input type="number" id="fdVan" min="0" step="0.01" inputmode="decimal" placeholder="0.00"></label>
-        <label for="fdIns">Insurance £ a day<input type="number" id="fdIns" min="0" step="0.01" inputmode="decimal" placeholder="0.00"></label>
+        <label for="fdVan">Van hire £ per 4 weeks<input type="number" id="fdVan" min="0" step="0.01" inputmode="decimal" placeholder="0.00"></label>
+        <label for="fdIns">Insurance £ per 4 weeks<input type="number" id="fdIns" min="0" step="0.01" inputmode="decimal" placeholder="0.00"></label>
         <label class="check" for="fdActive"><input type="checkbox" id="fdActive" checked> Active</label>
       </div>
       <p class="note" style="margin-top:10px">Moving an FD to the other depot only affects new entries. Past days stay with the depot they were worked at.</p>
@@ -313,6 +334,8 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
   const DEPOTS = ["RAUNDS", "GLENFIELD"];
   const DEPOT_NAME = { RAUNDS: "Raunds", GLENFIELD: "Glenfield" };
   const COSTS = [["charging", "Charging"], ["vanHire", "Van hire"], ["insurance", "Insurance"], ["damages", "Van damages"], ["extraPay", "Extra payments"]];
+  // Van hire and insurance are 4-weekly per FD, not entered per day.
+  const ENTRY_COSTS = COSTS.filter(([k]) => k !== "vanHire" && k !== "insurance");
   const $ = (id) => document.getElementById(id);
 
   // ---------- dates and money ----------
@@ -338,9 +361,10 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
     settings: structuredClone(DEFAULT_SETTINGS), settingsSaved: false,
     fds: [], fdsLoaded: false,
     dash: [], dashLoaded: false, day: [], dayLoaded: false, ent: [], entLoaded: false,
+    pc: [], pcTab: [], pcTabLoaded: false, pcEnt: [],
     db: null, dl: null, canWrite: true, offline: false,
   };
-  const ui = { tab: "dashboard", view: "week", date: todayS(), scope: "ALL", dayDate: todayS(), dayDepot: "ALL", dayDirty: false, entScope: "ALL", editingFd: null };
+  const ui = { tab: "dashboard", view: "week", date: todayS(), scope: "ALL", dayDate: todayS(), dayDepot: "ALL", dayDirty: false, entScope: "ALL", editingFd: null, pcDate: todayS(), pcDirty: false };
   try { const v = localStorage.getItem("pnl-view"); if (v === "day" || v === "week" || v === "period") ui.view = v; } catch (_) {}
 
   const fdById = (id) => S.fds.find((f) => f.id === id);
@@ -367,10 +391,11 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
 
   // ---------- maths ----------
   function agg(list) {
-    const t = { routes: 0, routeRevenue: 0, extraIncome: 0, count: list.length };
+    const t = { routes: 0, routeRevenue: 0, extraIncome: 0, count: 0 };
     for (const [k] of COSTS) t[k] = 0;
     const days = new Set();
     for (const e of list) {
+      if (!e.charge) t.count++;
       t.routes += num(e.routes);
       t.routeRevenue += num(e.routes) * num(e.rate);
       t.extraIncome += num(e.extraIncome);
@@ -387,6 +412,36 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
     t.days = days.size;
     return t;
   }
+  // ---------- 4-weekly van hire and insurance ----------
+  // A saved figure for the period wins. Otherwise an FD is charged its usual 4-weekly
+  // amount if it is active, or if it worked any day in that period.
+  function chargesFor(pStart, saved, entries) {
+    const pEnd = addDays(pStart, 27);
+    const byFd = new Map(saved.filter((c) => c.periodStart === pStart).map((c) => [c.fdId, c]));
+    const worked = new Set(entries.filter((e) => e.date >= pStart && e.date <= pEnd).map((e) => e.fdId));
+    const out = [];
+    for (const f of S.fds) {
+      const s = byFd.get(f.id);
+      if (s) out.push({ fdId: f.id, depot: s.depot || f.depot, vanHire: num(s.vanHire), insurance: num(s.insurance), saved: true, docId: s.id });
+      else if (f.active !== false || worked.has(f.id)) out.push({ fdId: f.id, depot: f.depot, vanHire: num(f.vanHire), insurance: num(f.insurance), saved: false });
+    }
+    for (const [id, s] of byFd) if (!fdById(id)) out.push({ fdId: id, depot: s.depot, vanHire: num(s.vanHire), insurance: num(s.insurance), saved: true, docId: s.id });
+    return out;
+  }
+  // Spread each period charge evenly over its 28 days, so day and week views carry their share.
+  function chargeRows(pStart, charges) {
+    const rows = [];
+    for (const c of charges) {
+      if (!c.vanHire && !c.insurance) continue;
+      for (let i = 0; i < 28; i++) rows.push({ charge: true, date: addDays(pStart, i), fdId: c.fdId, depot: c.depot, routes: 0, vanHire: c.vanHire / 28, insurance: c.insurance / 28 });
+    }
+    return rows;
+  }
+  function dashRows() {
+    const pStart = periodInfo(ui.date).start;
+    return S.dash.concat(chargeRows(pStart, chargesFor(pStart, S.pc, S.dash)));
+  }
+
   const scopeFilter = (scope) => scope === "ALL" ? () => true
     : scope.startsWith("D:") ? ((d) => (e) => e.depot === d)(scope.slice(2))
     : ((id) => (e) => e.fdId === id)(scope.slice(2));
@@ -436,10 +491,10 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
     $("dashEmpty").hidden = !noFds;
     if (noFds) $("dashEmpty").innerHTML = `<div class="block empty"><h3>Set up your FDs to start</h3><ol>
       <li>Open <b>FDs &amp; rates</b> and enter each depot's revenue per route and the first day of a 4-week period.</li>
-      <li>Add each FD with its email address and depot.</li>
-      <li>Use <b>Daily entry</b> each day for routes, charging, van hire, insurance and damages.</li></ol></div>`;
+      <li>Add each FD with its email address, depot, and 4-weekly van hire and insurance.</li>
+      <li>Use <b>Daily entry</b> each day for routes, charging, damages and extras.</li></ol></div>`;
 
-    const inRange = S.dash.filter((e) => e.date >= a && e.date <= b);
+    const inRange = dashRows().filter((e) => e.date >= a && e.date <= b);
     const scoped = inRange.filter(scopeFilter(ui.scope));
     const t = agg(scoped);
     const tile = (cls, label, val, note) => `<div class="tile ${cls}"><span class="eyebrow">${label}</span><b>${loading ? "…" : val}</b>${note ? `<small>${note}</small>` : ""}</div>`;
@@ -452,8 +507,8 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
       tile("", "Profit per route", money(t.ppr), `Costs ${money(t.cpr)} per route`),
       tile("cost", "Total costs", money(t.costs), ""),
       tile("cost", "Charging", money(t.charging), ""),
-      tile("cost", "Van hire", money(t.vanHire), ""),
-      tile("cost", "Insurance", money(t.insurance), ""),
+      tile("cost", "Van hire", money(t.vanHire), ui.view === "period" ? "4-weekly charge" : `Share of 4-weekly charge (${ui.view === "day" ? "1" : "7"}/28)`),
+      tile("cost", "Insurance", money(t.insurance), ui.view === "period" ? "4-weekly charge" : `Share of 4-weekly charge (${ui.view === "day" ? "1" : "7"}/28)`),
       tile("cost", "Van damages", money(t.damages), ""),
       tile("cost", "Extra payments", money(t.extraPay), ""),
     ].join("");
@@ -492,10 +547,12 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
     // day breakdown
     if (ui.view === "day") {
       $("timeTitle").textContent = "FDs on this day";
-      $("timeMeta").textContent = "";
-      const rows = scoped.slice().sort((x, y) => x.depot.localeCompare(y.depot) || fdCode(x.fdId).localeCompare(fdCode(y.fdId), undefined, { numeric: true }));
+      $("timeMeta").textContent = "Van hire and insurance show 1/28 of the 4-weekly charge.";
+      const seen = new Set();
+      const one = scoped.slice().sort((x, y) => (x.charge ? 1 : 0) - (y.charge ? 1 : 0)).filter((e) => { const k = e.fdId + "|" + e.depot; if (seen.has(k)) return false; seen.add(k); return true; });
+      const rows = one.sort((x, y) => x.depot.localeCompare(y.depot) || fdCode(x.fdId).localeCompare(fdCode(y.fdId), undefined, { numeric: true }));
       $("timeTable").innerHTML = `<thead><tr><th class="l">FD and email</th><th class="l">Depot</th>${HEAD}<th class="l">Notes</th></tr></thead><tbody>` +
-        (rows.length ? rows.map((e) => `<tr>${fdCell(e.fdId)}<td class="l">${chip(e.depot)}</td>${cells(agg([e]))}<td class="wrapcell">${esc(e.notes || "")}</td></tr>`).join("")
+        (rows.length ? rows.map((e) => `<tr>${fdCell(e.fdId)}<td class="l">${chip(e.depot)}</td>${cells(agg(scoped.filter((x) => x.fdId === e.fdId && x.depot === e.depot)))}<td class="wrapcell">${esc(e.notes || "")}</td></tr>`).join("")
           : `<tr><td class="l" colspan="17">${loading ? "Loading…" : "Nothing entered for this day yet. Use Daily entry to add it."}</td></tr>`) +
         `</tbody>` + (rows.length ? `<tfoot><tr><td class="l">Total</td><td></td>${cells(t)}<td></td></tr></tfoot>` : "");
     } else {
@@ -511,7 +568,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
   }
 
   // ============ DAILY ENTRY ============
-  const FIELDS = ["routes", "rate", "extraIncome", "charging", "vanHire", "insurance", "damages", "extraPay"];
+  const FIELDS = ["routes", "rate", "extraIncome", "charging", "damages", "extraPay"];
   function renderDaily(force) {
     $("dayDate").value = ui.dayDate;
     $("dayDepot").value = ui.dayDepot;
@@ -531,9 +588,8 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
       return `<div class="daycard${e.date ? " filled" : ""}" data-fd="${esc(f.id)}">
         <header><div><div class="fdname">${esc(f.code)}${f.driver ? ` <span class="email">· ${esc(f.driver)}</span>` : ""}</div><div class="email">${esc(f.email)}</div></div>${chip(e.depot || f.depot)}</header>
         <div class="fields">
-          ${fld("routes", "Routes", "1")}${fld("rate", "Rate / route £", "0.01")}${fld("charging", "Charging £", "0.01")}
-          ${fld("vanHire", "Van hire £", "0.01")}${fld("insurance", "Insurance £", "0.01")}${fld("damages", "Van damages £", "0.01")}
-          ${fld("extraIncome", "Extra income £", "0.01")}${fld("extraPay", "Extra payments £", "0.01")}
+          ${fld("routes", "Routes", "1")}${fld("rate", "Rate / route £", "0.01")}${fld("extraIncome", "Extra income £", "0.01")}
+          ${fld("charging", "Charging £", "0.01")}${fld("damages", "Van damages £", "0.01")}${fld("extraPay", "Extra payments £", "0.01")}
           <label class="wide">Notes <span class="opt">(optional)</span><input type="text" name="notes" id="d-${esc(f.id)}-notes" autocomplete="off" value="${esc(e.notes || "")}"></label>
         </div>
         <div class="calc"></div>
@@ -548,7 +604,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
     for (const k of FIELDS) d[k] = g(k);
     return d;
   }
-  const blank = (d) => ["routes", "extraIncome", "charging", "vanHire", "insurance", "damages", "extraPay"].every((k) => num(d[k]) === 0) && !d.notes;
+  const blank = (d) => ["routes", "extraIncome", "charging", "damages", "extraPay"].every((k) => num(d[k]) === 0) && !d.notes;
   function updateCard(card) {
     const d = readCard(card);
     const t = agg([d]);
@@ -575,7 +631,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
       const doc = {
         date, fdId, depot: prev ? prev.depot : f.depot,
         routes: Math.max(0, Math.round(num(d.routes))), rate: num(d.rate),
-        charging: num(d.charging), vanHire: num(d.vanHire), insurance: num(d.insurance), damages: num(d.damages),
+        charging: num(d.charging), damages: num(d.damages),
         extraIncome: num(d.extraIncome), extraPay: num(d.extraPay),
         notes: d.notes,
       };
@@ -601,23 +657,72 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
     ui.entScope = fillScope($("entScope"), ui.entScope);
     $("entExport").hidden = !S.dl;
     const list = filteredEntries();
-    const head = `<thead><tr><th class="l">Date</th><th class="l">FD and email</th><th class="l">Depot</th><th>Routes</th><th>Rate</th><th>Route revenue</th><th>Extra income</th><th>Charging</th><th>Van hire</th><th>Insurance</th><th>Damages</th><th>Extra payments</th><th>Profit</th><th class="l">Notes</th><th></th></tr></thead>`;
+    const head = `<thead><tr><th class="l">Date</th><th class="l">FD and email</th><th class="l">Depot</th><th>Routes</th><th>Rate</th><th>Route revenue</th><th>Extra income</th><th>Charging</th><th>Damages</th><th>Extra payments</th><th>Profit before van &amp; insurance</th><th class="l">Notes</th><th></th></tr></thead>`;
     const body = list.map((e) => {
       const t = agg([e]);
       return `<tr><td class="l">${esc(dayD(e.date))}</td>${fdCell(e.fdId)}<td class="l">${chip(e.depot)}</td><td>${e.routes}</td><td>${money(e.rate)}</td><td>${money(t.routeRevenue)}</td><td>${money(t.extraIncome)}</td>` +
-        COSTS.map(([k]) => `<td>${money(e[k])}</td>`).join("") +
+        ENTRY_COSTS.map(([k]) => `<td>${money(e[k])}</td>`).join("") +
         `<td class="${signCls(t.profit)}">${money(t.profit)}</td><td class="wrapcell">${esc(e.notes || "")}</td>
         <td><div class="rowbtns"><button type="button" class="mini" data-edit="${esc(e.date)}">Edit day</button>${S.canWrite ? `<button type="button" class="mini" data-del="${esc(e.id)}">Delete</button>` : ""}</div></td></tr>`;
     }).join("");
     const t = agg(list);
     $("entTable").innerHTML = head + `<tbody>${body || `<tr><td class="l" colspan="15">${S.db && !S.entLoaded ? "Loading…" : "No entries in these dates."}</td></tr>`}</tbody>` +
-      (list.length ? `<tfoot><tr><td class="l">Total</td><td class="l">${list.length} entries</td><td></td><td>${t.routes}</td><td></td><td>${money(t.routeRevenue)}</td><td>${money(t.extraIncome)}</td>${COSTS.map(([k]) => `<td>${money(t[k])}</td>`).join("")}<td class="${signCls(t.profit)}">${money(t.profit)}</td><td></td><td></td></tr></tfoot>` : "");
+      (list.length ? `<tfoot><tr><td class="l">Total</td><td class="l">${list.length} entries</td><td></td><td>${t.routes}</td><td></td><td>${money(t.routeRevenue)}</td><td>${money(t.extraIncome)}</td>${ENTRY_COSTS.map(([k]) => `<td>${money(t[k])}</td>`).join("")}<td class="${signCls(t.profit)}">${money(t.profit)}</td><td></td><td></td></tr></tfoot>` : "");
+  }
+
+  // ============ VAN HIRE & INSURANCE (4-weekly) ============
+  function pcRows() {
+    const pStart = periodInfo(ui.pcDate).start;
+    const order = new Map(sortFds(S.fds).map((f, i) => [f.id, i]));
+    return chargesFor(pStart, S.pcTab, S.pcEnt).sort((x, y) => (order.get(x.fdId) ?? 999) - (order.get(y.fdId) ?? 999));
+  }
+  function renderCharges(force) {
+    const p = periodInfo(ui.pcDate);
+    $("pcTitle").textContent = `Period ${p.no} · ${shortD(p.start)} – ${fmt(addDays(p.start, 27), { day: "numeric", month: "short", year: "numeric" })}`;
+    if (ui.pcDirty && !force) { updatePcTotals(); return; }
+    const head = `<thead><tr><th class="l">FD and email</th><th class="l">Depot</th><th>Van hire £</th><th>Insurance £</th><th>Total</th><th class="l">Source</th><th></th></tr></thead>`;
+    if (!S.fdsLoaded || (S.db && !S.pcTabLoaded)) { $("pcTable").innerHTML = head + `<tbody><tr><td class="l" colspan="7">Loading…</td></tr></tbody>`; updatePcTotals(); return; }
+    const rows = pcRows();
+    const inp = (c, k) => `<input type="number" min="0" step="0.01" inputmode="decimal" style="width:110px;text-align:right" id="pc-${esc(c.fdId)}-${k}" data-k="${k}" value="${c[k] || c[k] === 0 ? c[k] : ""}"${S.canWrite ? "" : " disabled"}>`;
+    $("pcTable").innerHTML = head + `<tbody>` + (rows.length ? rows.map((c) => `<tr data-fd="${esc(c.fdId)}" data-depot="${esc(c.depot)}">${fdCell(c.fdId)}<td class="l">${chip(c.depot)}</td>
+        <td>${inp(c, "vanHire")}</td><td>${inp(c, "insurance")}</td><td class="pctot">${money(c.vanHire + c.insurance)}</td>
+        <td class="l">${c.saved ? "Saved for this period" : `<span class="email">FD's usual amount</span>`}</td>
+        <td>${c.saved && S.canWrite ? `<button type="button" class="mini" data-pcreset="${esc(c.docId)}">Use usual amount</button>` : ""}</td></tr>`).join("")
+      : `<tr><td class="l" colspan="7">No active FDs. Add FDs under FDs &amp; rates.</td></tr>`) + `</tbody>`;
+    updatePcTotals();
+  }
+  function readPc() {
+    return [...document.querySelectorAll("#pcTable tbody tr[data-fd]")].map((tr) => ({
+      fdId: tr.dataset.fd, depot: tr.dataset.depot,
+      vanHire: num(tr.querySelector('[data-k="vanHire"]').value), insurance: num(tr.querySelector('[data-k="insurance"]').value),
+    }));
+  }
+  function updatePcTotals() {
+    const rows = readPc();
+    document.querySelectorAll("#pcTable tbody tr[data-fd]").forEach((tr, i) => { tr.querySelector(".pctot").textContent = money(rows[i].vanHire + rows[i].insurance); });
+    const sum = (d) => rows.filter((r) => !d || r.depot === d).reduce((s, r) => s + r.vanHire + r.insurance, 0);
+    $("pcTotals").innerHTML = `Raunds <b>${money(sum("RAUNDS"))}</b> · Glenfield <b>${money(sum("GLENFIELD"))}</b> · Total <b>${money(sum())}</b> <span class="email">(${money(sum() / 4)} a week)</span>`;
+    $("savePc").disabled = !S.canWrite || !rows.length;
+  }
+  async function savePc() {
+    const msg = $("pcMsg");
+    if (!S.db) { setMsg(msg, "Saving isn't available here.", "err"); return; }
+    const pStart = periodInfo(ui.pcDate).start;
+    const rows = readPc();
+    $("savePc").disabled = true;
+    try {
+      await Promise.all(rows.map((r) => S.db.collection("periodCharges").doc(`${pStart}_${r.fdId}`).set({ periodStart: pStart, ...r, savedAt: new Date().toISOString() })));
+      ui.pcDirty = false;
+      setMsg(msg, `Saved van hire and insurance for the period starting ${shortD(pStart)}.`, "ok");
+      renderCharges(true);
+    } catch (err) { setMsg(msg, writeErr(err), "err"); }
+    finally { updatePcTotals(); }
   }
 
   // ============ SETTINGS ============
   function renderSettings() {
     const fds = sortFds(S.fds);
-    $("fdList").innerHTML = `<thead><tr><th class="l">FD</th><th class="l">Email</th><th class="l">Depot</th><th class="l">Driver</th><th>Rate / route</th><th>Van hire / day</th><th>Insurance / day</th><th class="l">Status</th><th></th></tr></thead><tbody>` +
+    $("fdList").innerHTML = `<thead><tr><th class="l">FD</th><th class="l">Email</th><th class="l">Depot</th><th class="l">Driver</th><th>Rate / route</th><th>Van hire / 4 wks</th><th>Insurance / 4 wks</th><th class="l">Status</th><th></th></tr></thead><tbody>` +
       (fds.length ? fds.map((f) => {
         const own = f.rate !== "" && f.rate != null;
         return `<tr><td class="l fdname">${esc(f.code)}</td><td class="l">${esc(f.email)}</td><td class="l">${chip(f.depot)}</td><td class="l">${esc(f.driver || "")}</td>
@@ -715,7 +820,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
   const csvRow = (t) => [t.routes, ...[t.routeRevenue, t.extraIncome, t.revenue, t.rpr, t.charging, t.vanHire, t.insurance, t.damages, t.extraPay, t.costs, t.profit, t.ppr].map((v) => v.toFixed(2)), Number.isFinite(t.margin) ? (t.margin * 100).toFixed(1) : ""];
   function exportReport() {
     const [a, b] = rangeFor(ui.view, ui.date);
-    const inRange = S.dash.filter((e) => e.date >= a && e.date <= b);
+    const inRange = dashRows().filter((e) => e.date >= a && e.date <= b);
     const scoped = inRange.filter(scopeFilter(ui.scope));
     const rows = [["DPD P&L report", scopeName(ui.scope), `${a} to ${b}`], [], ["Depot", ...CSV_HEAD]];
     DEPOTS.forEach((d) => rows.push([DEPOT_NAME[d], ...csvRow(agg(inRange.filter((e) => e.depot === d)))]));
@@ -726,10 +831,10 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
     saveCsv(rows, `dpd-pnl-${ui.view}-${a}.csv`, $("dashMsg"));
   }
   function exportEntries() {
-    const rows = [["Date", "Period", "Week", "Depot", "FD", "Email", "Routes", "Rate per route", "Route revenue", "Extra income", "Charging", "Van hire", "Insurance", "Van damages", "Extra payments", "Total costs", "Profit", "Notes"]];
+    const rows = [["Date", "Period", "Week", "Depot", "FD", "Email", "Routes", "Rate per route", "Route revenue", "Extra income", "Charging", "Van damages", "Extra payments", "Day costs", "Profit before van hire and insurance", "Notes"]];
     filteredEntries().reverse().forEach((e) => {
       const p = periodInfo(e.date), t = agg([e]);
-      rows.push([e.date, p.no, p.week, DEPOT_NAME[e.depot], fdCode(e.fdId), fdEmail(e.fdId), e.routes, e.rate, t.routeRevenue.toFixed(2), num(e.extraIncome), e.charging, e.vanHire, e.insurance, e.damages, num(e.extraPay), t.costs.toFixed(2), t.profit.toFixed(2), e.notes || ""]);
+      rows.push([e.date, p.no, p.week, DEPOT_NAME[e.depot], fdCode(e.fdId), fdEmail(e.fdId), e.routes, e.rate, t.routeRevenue.toFixed(2), num(e.extraIncome), e.charging, e.damages, num(e.extraPay), t.costs.toFixed(2), t.profit.toFixed(2), e.notes || ""]);
     });
     saveCsv(rows, `dpd-entries-${$("entFrom").value}-to-${$("entTo").value}.csv`, $("entMsg"));
   }
@@ -761,6 +866,14 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
     const a = wa < pa ? wa : pa, b = wb > pb ? wb : pb;
     if (!subs.dash || subs.dash.sig !== a + "|" + b) S.dashLoaded = false;
     listen("dash", rangeQ(a, b), (rows) => { S.dash = rows; S.dashLoaded = true; });
+    const pcQ = (p) => ({ sig: p, q: S.db.collection("periodCharges").where("periodStart", "==", p) });
+    listen("pc", pcQ(pa), (rows) => { S.pc = rows; });
+    if (ui.tab === "charges") {
+      const ps = periodInfo(ui.pcDate).start;
+      if (!subs.pcTab || subs.pcTab.sig !== ps) { S.pcTabLoaded = false; S.pcTab = []; S.pcEnt = []; }
+      listen("pcTab", pcQ(ps), (rows) => { S.pcTab = rows; S.pcTabLoaded = true; });
+      listen("pcEnt", rangeQ(ps, addDays(ps, 27)), (rows) => { S.pcEnt = rows; });
+    }
     if (ui.tab === "daily") {
       if (!subs.day || subs.day.sig !== ui.dayDate + "|" + ui.dayDate) { S.dayLoaded = false; S.day = []; }
       listen("day", rangeQ(ui.dayDate, ui.dayDate), (rows) => { S.day = rows; S.dayLoaded = true; });
@@ -778,6 +891,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
     if (ui.tab === "dashboard") renderDashboard();
     else if (ui.tab === "daily") renderDaily();
     else if (ui.tab === "entries") renderEntries();
+    else if (ui.tab === "charges") renderCharges();
     else renderSettings();
   }
   function showTab(tab) {
@@ -785,6 +899,7 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
     document.querySelectorAll(".nav button").forEach((b) => b.setAttribute("aria-selected", String(b.dataset.tab === tab)));
     document.querySelectorAll(".panel").forEach((p) => { p.hidden = p.id !== "tab-" + tab; });
     if (tab === "daily") ui.dayDirty = false;
+    if (tab === "charges") ui.pcDirty = false;
     if (tab === "entries" && !$("entFrom").value) { const [a, b] = rangeFor("period", todayS()); $("entFrom").value = a; $("entTo").value = b; }
     syncSubs();
     render();
@@ -820,14 +935,22 @@ td.wrapcell { white-space: normal; min-width: 120px; color: var(--muted); text-a
   $("dayCards").addEventListener("input", (e) => {
     const card = e.target.closest(".daycard"); if (!card) return;
     ui.dayDirty = true;
-    if (e.target.name === "routes" && num(e.target.value) > 0) {
-      const f = fdById(card.dataset.fd), van = card.querySelector('[name="vanHire"]'), ins = card.querySelector('[name="insurance"]');
-      if (f && van.value === "" && num(f.vanHire)) van.value = f.vanHire;
-      if (f && ins.value === "" && num(f.insurance)) ins.value = f.insurance;
-    }
     updateCard(card); updateDayTotals();
   });
   $("saveDay").addEventListener("click", saveDay);
+
+  const setPc = (d) => { ui.pcDate = d; ui.pcDirty = false; setMsg($("pcMsg"), ""); syncSubs(); renderCharges(true); };
+  $("pcPrev").addEventListener("click", () => setPc(addDays(periodInfo(ui.pcDate).start, -28)));
+  $("pcNext").addEventListener("click", () => setPc(addDays(periodInfo(ui.pcDate).start, 28)));
+  $("pcTable").addEventListener("input", () => { ui.pcDirty = true; updatePcTotals(); });
+  $("pcTable").addEventListener("click", async (e) => {
+    const btn = e.target.closest("[data-pcreset]");
+    if (!btn || !arm(btn)) return;
+    btn.disabled = true;
+    try { await S.db.collection("periodCharges").doc(btn.dataset.pcreset).delete(); ui.pcDirty = false; setMsg($("pcMsg"), "Back to the FD's usual amount for this period.", "ok"); renderCharges(true); }
+    catch (err) { btn.disabled = false; setMsg($("pcMsg"), "Couldn't change that. Try again.", "err"); }
+  });
+  $("savePc").addEventListener("click", savePc);
 
   for (const id of ["entFrom", "entTo"]) $(id).addEventListener("change", () => { syncSubs(); renderEntries(); });
   $("entScope").addEventListener("change", (e) => { ui.entScope = e.target.value; renderEntries(); });
